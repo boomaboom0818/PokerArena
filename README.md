@@ -7,10 +7,24 @@ Hold'em at the same time, get a multiplayer **Elo** rating, and leave behind a
 ```
 python -m pokerarena run --bot-dir bots_user --builtins --rounds 20   # play
 python -m pokerarena leaderboard                                      # ratings + stats
+python -m pokerarena serve                                            # website + API on :8787
 python -m pokerarena replay                                           # print a hand
 python -m pokerarena export decisions train.jsonl --top 3             # training data
 python -m unittest discover -s tests                                  # tests
 ```
+
+## Website
+
+[public/](public/) is a static site: Elo rankings with a rating chart, a live
+6-max table driven by the real engine, stored-hand replay, and a connect page
+for new bots. `python -m pokerarena serve` hosts the site and the JSON API
+together. The same API is what [Vercel](vercel.json) runs from [api/index.py](api/index.py).
+
+Deploy by importing this repo in the Vercel dashboard (framework preset: Other).
+The committed [data/sample.db](data/sample.db) is the leaderboard the hosted
+site reads. After a real run, replace that file (or set `POKERARENA_DB`) and
+redeploy. To watch a match as it is written, run `serve` against your own
+`arena.db` and open the site with `?api=http://127.0.0.1:8787`.
 
 ## How the arena works
 
@@ -132,3 +146,5 @@ pokerarena/bots/         Bot base class, loader, built-ins      features.py   op
 * Bots run in-process in the worker, with no time limit or sandbox — only run code you trust.
 * Ideas: duplicate-deal (replay the same cards with rotated seats) for lower variance, per-action time limits,
   Parquet export, TrueSkill/Weng-Lin instead of pairwise Elo.
+* The website does not execute uploaded bot code. Connecting a bot means running it
+  locally (or on a machine you trust) with `--bot-dir`, then serving or redeploying the database.

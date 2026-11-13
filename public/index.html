@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PokerArena — bot rankings, live tables, connect a bot</title>
+<link rel="stylesheet" href="/styles.css?v=5">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#rankings">Poker<span>Arena</span></a>
+  <nav>
+    <a href="#rankings" data-nav="rankings">Rankings</a>
+    <a href="#live" data-nav="live">Live table</a>
+    <a href="#hands" data-nav="hands">Hands</a>
+    <a href="#connect" data-nav="connect">Connect a bot</a>
+  </nav>
+  <div class="api-pill" id="api-pill">checking API…</div>
+</header>
+
+<main>
+  <section id="rankings" class="view">
+    <div class="hero">
+      <div>
+        <p class="kicker">6-max no-limit · multiplayer Elo</p>
+        <h1>Who is actually winning?</h1>
+        <p class="lede">Every bot sits 6-handed, stacks reset each hand, and Elo moves from who won the match. The ± column is a 95% error bar on bb/100 — poker is noisy, so read the rating next to it.</p>
+      </div>
+      <div class="hero-stats" id="hero-stats"></div>
+    </div>
+    <div class="toolbar">
+      <input id="bot-filter" type="search" placeholder="Filter bots" aria-label="Filter bots">
+      <label class="check"><input type="checkbox" id="min-hands"> hide bots under 100 hands</label>
+    </div>
+    <div class="table-wrap">
+      <table class="board" id="lb">
+        <thead>
+          <tr>
+            <th data-sort="rank">#</th>
+            <th data-sort="bot">Bot</th>
+            <th data-sort="elo">Elo</th>
+            <th data-sort="matches">Matches</th>
+            <th data-sort="hands">Hands</th>
+            <th data-sort="bb100">bb/100</th>
+            <th data-sort="ci95">±95%</th>
+            <th data-sort="vpip">VPIP</th>
+            <th data-sort="pfr">PFR</th>
+            <th data-sort="af">AF</th>
+            <th data-sort="match_wins">Wins</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="split">
+      <figure class="panel">
+        <figcaption>Elo</figcaption>
+        <svg id="elo-chart" viewBox="0 0 640 280" role="img" aria-label="Elo bar chart"></svg>
+      </figure>
+      <aside class="panel" id="bot-card">
+        <h2>Pick a bot</h2>
+        <p class="muted">Click a row to see its rating history and recent matches.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section id="live" class="view" hidden>
+    <div class="section-head">
+      <div>
+        <p class="kicker">Built-in bots, real engine</p>
+        <h1>Watch a table</h1>
+      </div>
+      <div class="live-controls">
+        <button type="button" id="deal" class="primary">New shoe</button>
+        <button type="button" id="play">Play</button>
+        <button type="button" id="step">Step</button>
+        <label>Speed <input id="speed" type="range" min="1" max="5" value="3"></label>
+        <label class="check"><input type="checkbox" id="show-holes" checked> show hole cards</label>
+      </div>
+    </div>
+    <div class="seat-picker" id="seat-picker"></div>
+    <p class="logline" id="action-log">Seats fill when you deal.</p>
+    <div class="felt-wrap">
+      <div class="felt" id="felt" aria-label="Poker table"></div>
+    </div>
+  </section>
+
+  <section id="hands" class="view" hidden>
+    <div class="section-head">
+      <div>
+        <p class="kicker">Every action is stored</p>
+        <h1>Replay a hand</h1>
+      </div>
+    </div>
+    <div class="split hands-split">
+      <div class="panel list" id="hand-list"><p class="muted">Loading hands…</p></div>
+      <div>
+        <div class="felt-wrap small">
+          <div class="felt" id="replay-felt"></div>
+        </div>
+        <div class="panel" id="replay-script"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="connect" class="view" hidden>
+    <div class="section-head">
+      <div>
+        <p class="kicker">No account, no protocol</p>
+        <h1>Connect a bot</h1>
+        <p class="lede">A bot is a Python class with an <code>act</code> method. Put the file in a folder and point the arena at it. The class name is the leaderboard identity. This site does not upload or run your code — it reads the database the arena writes.</p>
+      </div>
+    </div>
+    <div class="steps" id="connect-steps"></div>
+    <div class="split">
+      <pre class="code" id="bot-sample"></pre>
+      <div class="panel">
+        <h2>What <code>act</code> can see</h2>
+        <ul id="obs-list"></ul>
+        <h2>Hooks</h2>
+        <ul id="hook-list"></ul>
+        <p class="muted" id="safety"></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>PokerArena</span>
+  <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
+</footer>
+<script src="/app.js?v=6"></script>
+</body>
+</html>

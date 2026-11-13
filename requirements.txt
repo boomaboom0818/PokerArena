@@ -1,0 +1,2 @@
+# The arena and the site use the Python standard library only.
+# This file exists so Vercel detects a Python project.

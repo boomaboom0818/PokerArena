@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30,
+      "includeFiles": "{pokerarena/**,data/sample.db}",
+      "excludeFiles": "{tests/**,**/__pycache__/**,bots_user/**}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index?path=$1" },
+    { "source": "/((?!api/|styles.css|app.js|favicon.ico).*)", "destination": "/index.html" }
+  ]
+}

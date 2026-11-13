@@ -82,6 +82,15 @@ def cmd_export(args) -> None:
     print(f"wrote {n} {args.what} rows to {args.out}")
 
 
+def cmd_serve(args) -> None:
+    from pathlib import Path
+
+    from .http_api import serve
+
+    public = Path(__file__).resolve().parent.parent / "public"
+    serve(args.db, args.host, args.port, static_dir=str(public) if public.is_dir() else None)
+
+
 def cmd_replay(args) -> None:
     store = Store(args.db)
     if args.hand_id is None:
@@ -134,6 +143,11 @@ def main(argv=None) -> None:
     rp = sub.add_parser("replay", help="print one hand history")
     rp.add_argument("hand_id", type=int, nargs="?")
     rp.set_defaults(fn=cmd_replay)
+
+    sv = sub.add_parser("serve", help="website + JSON API (what Vercel hosts)")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.set_defaults(fn=cmd_serve)
 
     args = p.parse_args(argv)
     args.fn(args)
