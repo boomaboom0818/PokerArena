@@ -15,8 +15,8 @@ let leaderboard = [];
 let sortKey = "elo";
 let sortDir = -1;
 let selectedBot = null;
-let live = { seed: 7, cursor: 0, hands: 4, names: BUILTINS.slice(0, 6), timer: null, playing: false };
-let showHoles = true;
+let live = { table: 0, cursor: -1, timer: null };
+const showHoles = true;
 
 function api(path, opts) {
   return fetch(API + path, opts).then(async (res) => {
@@ -47,9 +47,11 @@ function route() {
   const name = (location.hash || "#rankings").slice(1) || "rankings";
   $$(".view").forEach((v) => { v.hidden = v.id !== name; });
   $$("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name));
+  window.scrollTo(0, 0);
   if (name === "hands" && !$("#hand-list").dataset.loaded) loadHands();
   if (name === "connect" && !$("#bot-sample").textContent) loadConnect();
-  if (name === "live" && !live.frame) pullFrame();
+  if (name === "live") startBroadcast();
+  else stopBroadcast();
 }
 
 function emptyFrame() {
@@ -57,7 +59,10 @@ function emptyFrame() {
 }
 
 async function boot() {
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  window.scrollTo(0, 0);
   route();
+  requestAnimationFrame(() => window.scrollTo(0, 0));
   window.addEventListener("hashchange", route);
   try {
     await api("/api/health");
@@ -69,9 +74,7 @@ async function boot() {
     $("#api-pill").title = String(err);
   }
   bindRankings();
-  bindLive();
   await refreshLeaderboard();
-  buildSeatPicker();
 }
 
 function bindRankings() {
@@ -205,71 +208,51 @@ function sparkline(values) {
   return `<svg class="spark" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="#e4c27a" stroke-width="2" points="${pts}"></polyline></svg>`;
 }
 
-function buildSeatPicker() {
-  const box = $("#seat-picker");
-  box.innerHTML = "";
-  BUILTINS.forEach((name) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = name;
-    b.className = live.names.includes(name) ? "on" : "";
-    b.addEventListener("click", () => {
-      if (live.names.includes(name)) live.names = live.names.filter((n) => n !== name);
-      else if (live.names.length < 6) live.names.push(name);
-      b.classList.toggle("on", live.names.includes(name));
-    });
-    box.appendChild(b);
-  });
+function startBroadcast() {
+  if (live.timer) return;
+  tune();
+  live.timer = setInterval(tune, 1400);
 }
 
-function bindLive() {
-  $("#deal").addEventListener("click", () => {
-    live.seed = Math.floor(Math.random() * 1e9);
-    live.cursor = 0;
-    pullFrame();
-  });
-  $("#step").addEventListener("click", () => { live.cursor += 1; pullFrame(); });
-  $("#play").addEventListener("click", togglePlay);
-$("#speed").addEventListener("input", () => { if (live.playing) { togglePlay(); togglePlay(); } });
-  $("#show-holes").addEventListener("change", (e) => {
-    showHoles = e.target.checked;
-    if (live.frame) renderFelt($("#felt"), live.frame);
-  });
-}
-
-function togglePlay() {
-  live.playing = !live.playing;
-  $("#play").textContent = live.playing ? "Pause" : "Play";
+function stopBroadcast() {
   clearInterval(live.timer);
-  if (!live.playing) return;
-  const ms = [1400, 900, 600, 380, 220][Number($("#speed").value) - 1];
-  live.timer = setInterval(() => {
-    if (live.done) { togglePlay(); return; }
-    if (live.busy) return;
-    live.cursor += 1;
-    pullFrame();
-  }, ms);
+  live.timer = null;
 }
 
-async function pullFrame() {
-  if (live.names.length < 2) {
-    $("#action-log").textContent = "Pick at least two bots.";
+function showTables(n) {
+  const box = $("#table-tabs");
+  if (box.childElementCount === n) {
+    $$("button", box).forEach((b, i) => b.classList.toggle("on", i === live.table));
     return;
   }
+  box.innerHTML = "";
+  for (let i = 0; i < n; i++) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "Table " + (i + 1);
+    b.className = i === live.table ? "on" : "";
+    b.addEventListener("click", () => {
+      live.table = i;
+      live.cursor = -1;
+      tune();
+    });
+    box.appendChild(b);
+  }
+}
+
+async function tune() {
+  if (live.busy) return;
   live.busy = true;
   try {
-    const data = await api("/api/live/frame", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bots: live.names, seed: live.seed, hands: live.hands, cursor: live.cursor,
-      }),
-    });
+    const data = await api("/api/live?table=" + live.table);
+    showTables(data.tables || 1);
+    if (data.cursor === live.cursor && data.shoe === live.shoe) return;
     live.cursor = data.cursor;
-    live.done = data.done;
+    live.shoe = data.shoe;
     live.frame = data.frame;
     renderFelt($("#felt"), data.frame);
-    $("#action-log").textContent = describe(data.frame, data);
+    const names = (data.names || []).join(" · ");
+    $("#action-log").textContent = `Table ${data.table + 1} · shoe ${data.shoe + 1} · ${describe(data.frame, data)} · ${names}`;
   } catch (err) {
     $("#action-log").textContent = err.message;
   } finally {
@@ -283,7 +266,7 @@ const VERBS = {
 };
 
 function describe(frame, meta) {
-  if (!frame || frame.type === "session_end") return "Shoe finished. Deal again for a new seed.";
+  if (!frame || frame.type === "session_end") return "next shoe";
   const last = frame.last;
   let who = frame.phase;
   if (last && last.bot) {

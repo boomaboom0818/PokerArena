@@ -14,7 +14,7 @@ local site behave the same.
     GET  /api/hands?limit=30&bot=&match_id=
     GET  /api/hands/<id>
     GET  /api/connect
-    POST /api/live/frame       {"bots": [...], "seed": 1, "hands": 3, "cursor": 0}
+    GET  /api/live?table=0     the action the shared broadcast is on right now
 """
 
 from __future__ import annotations
@@ -235,8 +235,50 @@ class MyBot(Bot):
 }
 
 
-# ---------------------------------------------------------------- live tables
-DEFAULT_LIVE = ["tag", "lag", "nit", "equity", "calling_station", "maniac"]
+# ---------------------------------------------------------------- live broadcast
+# One shared clock. A visitor never picks a seed, a cursor, or who sits.
+# The same UTC second shows the same action to everyone, and the shoe rolls on.
+BROADCAST_EPOCH = 1794528000  # 2026-11-13 00:00:00 UTC
+BROADCAST_STEP_S = 1.4
+# Every shoe occupies the same number of steps, so the clock is a division,
+# not a walk back to the epoch. A short shoe holds its last action until the slot ends.
+BROADCAST_SLOT = 400
+BROADCAST_TABLES = [
+    ["tag", "lag", "nit", "equity", "calling_station", "maniac"],
+    ["equity_lag", "rock", "tag", "random", "nit", "lag"],
+]
+BROADCAST_HANDS = 8
+
+
+def broadcast_frame(now: float | None = None, table: int = 0) -> dict:
+    """The action the arena is on at ``now``, for one of the fixed tables.
+
+    A shoe is ``BROADCAST_HANDS`` hands from a seed derived from the shoe
+    number. When it ends, the next shoe starts. No request can change the
+    lineup, the seed, or the cursor.
+    """
+    table = int(table) % len(BROADCAST_TABLES)
+    names = BROADCAST_TABLES[table]
+    now = time.time() if now is None else float(now)
+    elapsed = max(0.0, now - BROADCAST_EPOCH)
+    step = int(elapsed / BROADCAST_STEP_S)
+    shoe, cursor = divmod(step, BROADCAST_SLOT)
+    frame = live_frame(names, _shoe_seed(table, shoe), BROADCAST_HANDS, cursor)
+    if frame["done"]:
+        # The hand finished inside this slot. Hold the last action until the next shoe.
+        frame = live_frame(names, _shoe_seed(table, shoe), BROADCAST_HANDS, frame["total"] - 2)
+        frame["holding"] = True
+    frame["broadcast"] = True
+    frame["table"] = table
+    frame["tables"] = len(BROADCAST_TABLES)
+    frame["shoe"] = shoe
+    frame["step_s"] = BROADCAST_STEP_S
+    frame["server_time"] = now
+    return frame
+
+
+def _shoe_seed(table: int, shoe: int) -> int:
+    return (table + 1) * 1_000_003 + shoe * 97 + 11
 
 
 def live_frame(names: list[str] | None, seed: int, hands: int, cursor: int) -> dict:
@@ -245,7 +287,7 @@ def live_frame(names: list[str] | None, seed: int, hands: int, cursor: int) -> d
     Stateless on purpose: Vercel functions do not keep a table between requests,
     and the engine is deterministic for a given seed, so replaying is exact.
     """
-    names = list(names or DEFAULT_LIVE)
+    names = list(names or BROADCAST_TABLES[0])
     unknown = [n for n in names if n not in BUILTIN]
     if unknown:
         raise ValueError(f"unknown bot(s): {unknown}. Built-ins: {sorted(BUILTIN)}")
@@ -537,9 +579,16 @@ def make_handler(store: Store):
             self._send(204, {})
 
         def do_GET(self):
+            # The broadcast does not touch the database, so it must not wait
+            # behind a leaderboard query (and a leaderboard query must not wait
+            # behind a broadcast).
+            live = urlparse(self.path).path.rstrip("/") == "/api/live"
             try:
-                with db_lock:
+                if live:
                     self._route("GET")
+                else:
+                    with db_lock:
+                        self._route("GET")
             except Exception as exc:
                 self._send(500, {"error": str(exc), "trace": traceback.format_exc(limit=2)})
 
@@ -601,23 +650,9 @@ def make_handler(store: Store):
             if method == "GET" and path == "/api/connect":
                 self._send(200, CONNECT_GUIDE)
                 return
-            if method == "POST" and path == "/api/live/frame":
-                body = self._read_json()
-                self._send(200, live_frame(
-                    body.get("bots"),
-                    int(body.get("seed") or 1),
-                    int(body.get("hands") or 4),
-                    int(body.get("cursor") or 0),
-                ))
-                return
-            if method == "GET" and path == "/api/live/frame":
-                names = qs.get("bots", [",".join(DEFAULT_LIVE)])[0].split(",")
-                self._send(200, live_frame(
-                    [n for n in names if n],
-                    int(qs.get("seed", ["1"])[0]),
-                    int(qs.get("hands", ["4"])[0]),
-                    int(qs.get("cursor", ["0"])[0]),
-                ))
+            if method == "GET" and path == "/api/live":
+                table = int(qs.get("table", ["0"])[0])
+                self._send(200, broadcast_frame(table=table))
                 return
             self._send(404, {"error": "not found", "path": path})
 
@@ -671,7 +706,7 @@ def serve(db_path: str, host: str = "127.0.0.1", port: int = 8787, static_dir: s
         handler = _with_static(handler, static_dir)
     httpd = ThreadingHTTPServer((host, port), handler)
     print(f"pokerarena  http://{host}:{port}   db={db_path}")
-    print("  site /    API /api/leaderboard  /api/hands/<id>  /api/live/frame")
+    print("  site /    API /api/leaderboard  /api/hands/<id>  /api/live")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

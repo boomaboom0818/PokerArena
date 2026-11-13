@@ -27,7 +27,7 @@ from pokerarena.http_api import (  # noqa: E402
     leaderboard_payload,
     list_hands,
     list_matches,
-    live_frame,
+    broadcast_frame,
 )
 from pokerarena.storage import Store  # noqa: E402
 
@@ -99,19 +99,8 @@ def dispatch(method: str, path: str, qs: dict, body: dict):
         return (200, payload) if payload else (404, {"error": "unknown hand"})
     if path == "/api/connect":
         return 200, CONNECT_GUIDE
-    if path == "/api/live/frame":
-        if method == "POST":
-            names = body.get("bots")
-            seed = int(body.get("seed") or 1)
-            hands = int(body.get("hands") or 4)
-            cursor = int(body.get("cursor") or 0)
-        else:
-            raw = (qs.get("bots") or [""])[0]
-            names = [n for n in raw.split(",") if n] or None
-            seed = int((qs.get("seed") or ["1"])[0])
-            hands = int((qs.get("hands") or ["4"])[0])
-            cursor = int((qs.get("cursor") or ["0"])[0])
-        return 200, live_frame(names, seed, hands, cursor)
+    if path == "/api/live":
+        return 200, broadcast_frame(table=int((qs.get("table") or ["0"])[0]))
     return 404, {"error": "not found", "path": path}
 
 

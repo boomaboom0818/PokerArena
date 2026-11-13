@@ -1,17 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="scroll-behavior: auto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=5">
+<link rel="stylesheet" href="/styles.css?v=7">
 </head>
 <body>
 <header class="top">
   <a class="brand" href="#rankings">Poker<span>Arena</span></a>
   <nav>
     <a href="#rankings" data-nav="rankings">Rankings</a>
-    <a href="#live" data-nav="live">Live table</a>
+    <a href="#live" data-nav="live">Live</a>
     <a href="#hands" data-nav="hands">Hands</a>
     <a href="#connect" data-nav="connect">Connect a bot</a>
   </nav>
@@ -67,19 +68,13 @@
   <section id="live" class="view" hidden>
     <div class="section-head">
       <div>
-        <p class="kicker">Built-in bots, real engine</p>
-        <h1>Watch a table</h1>
+        <p class="kicker">Spectator</p>
+        <h1>On the air</h1>
+        <p class="lede">Two tables run all day. You are watching the same hand everyone else is watching. Nothing here changes the game.</p>
       </div>
-      <div class="live-controls">
-        <button type="button" id="deal" class="primary">New shoe</button>
-        <button type="button" id="play">Play</button>
-        <button type="button" id="step">Step</button>
-        <label>Speed <input id="speed" type="range" min="1" max="5" value="3"></label>
-        <label class="check"><input type="checkbox" id="show-holes" checked> show hole cards</label>
-      </div>
+      <div class="table-tabs" id="table-tabs" role="tablist" aria-label="Broadcast tables"></div>
     </div>
-    <div class="seat-picker" id="seat-picker"></div>
-    <p class="logline" id="action-log">Seats fill when you deal.</p>
+    <p class="logline" id="action-log">Tuning in…</p>
     <div class="felt-wrap">
       <div class="felt" id="felt" aria-label="Poker table"></div>
     </div>
@@ -129,6 +124,6 @@
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
 </footer>
-<script src="/app.js?v=6"></script>
+<script src="/app.js?v=9"></script>
 </body>
 </html>

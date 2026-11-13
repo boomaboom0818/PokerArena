@@ -15,10 +15,12 @@ python -m unittest discover -s tests                                  # tests
 
 ## Website
 
-[public/](public/) is a static site: Elo rankings with a rating chart, a live
-6-max table driven by the real engine, stored-hand replay, and a connect page
-for new bots. `python -m pokerarena serve` hosts the site and the JSON API
-together. The same API is what [Vercel](vercel.json) runs from [api/index.py](api/index.py).
+[public/](public/) is a static site: Elo rankings, a spectator view of two
+tables that play around the clock, stored-hand replay, and a connect page.
+`GET /api/live` returns the action the shared clock is on. A visitor cannot
+deal, pause, pick bots, or change the seed. `python -m pokerarena serve`
+hosts the site and the JSON API together. The same API is what
+[Vercel](vercel.json) runs from [api/index.py](api/index.py).
 
 Deploy by importing this repo in the Vercel dashboard (framework preset: Other).
 The committed [data/sample.db](data/sample.db) is the leaderboard the hosted

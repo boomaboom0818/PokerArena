@@ -8,7 +8,14 @@ from urllib.request import urlopen
 
 from pokerarena.arena import Arena, ArenaConfig
 from pokerarena.bots import builtin_specs
-from pokerarena.http_api import hand_payload, leaderboard_payload, live_frame
+from pokerarena.http_api import (
+    BROADCAST_EPOCH,
+    BROADCAST_STEP_S,
+    broadcast_frame,
+    hand_payload,
+    leaderboard_payload,
+    live_frame,
+)
 from pokerarena.storage import Store
 
 
@@ -32,6 +39,32 @@ class LiveFrameTests(unittest.TestCase):
     def test_rejects_a_duplicate_seat(self):
         with self.assertRaises(ValueError):
             live_frame(["tag", "tag"], 1, 1, 0)
+
+    def test_broadcast_is_the_same_for_everyone_at_one_moment(self):
+        moment = BROADCAST_EPOCH + 40 * BROADCAST_STEP_S
+        a = broadcast_frame(moment, table=0)
+        b = broadcast_frame(moment, table=0)
+        self.assertEqual(a["cursor"], b["cursor"])
+        self.assertEqual(a["shoe"], b["shoe"])
+        self.assertEqual(a["frame"]["seats"][0]["hole"], b["frame"]["seats"][0]["hole"])
+        self.assertTrue(a["broadcast"])
+        later = broadcast_frame(moment + BROADCAST_STEP_S, table=0)
+        self.assertEqual(later["cursor"], a["cursor"] + 1)
+
+    def test_a_year_of_broadcast_is_one_shoe_not_a_walk(self):
+        import time
+        t0 = time.perf_counter()
+        frame = broadcast_frame(BROADCAST_EPOCH + 365 * 86400, table=0)
+        self.assertLess(time.perf_counter() - t0, 1.0)
+        self.assertGreater(frame["shoe"], 1000)
+        self.assertIn("seats", frame["frame"])
+
+    def test_broadcast_ignores_a_request_trying_to_pick_the_game(self):
+        # The public route takes only a table index. A huge index wraps.
+        wrapped = broadcast_frame(BROADCAST_EPOCH, table=2)
+        first = broadcast_frame(BROADCAST_EPOCH, table=0)
+        self.assertEqual(wrapped["table"], 0)
+        self.assertEqual(wrapped["names"], first["names"])
 
 
 class ApiPayloadTests(unittest.TestCase):
