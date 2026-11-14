@@ -45,13 +45,14 @@ function cardEl(code, large) {
 }
 
 function route() {
-  const name = (location.hash || "#rankings").slice(1) || "rankings";
+  let name = (location.hash || "#home").slice(1) || "home";
+  if (name === "rankings" || name === "live") name = "home";
   $$(".view").forEach((v) => { v.hidden = v.id !== name; });
   $$("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name));
   window.scrollTo(0, 0);
   if (name === "hands" && !$("#hand-list").dataset.loaded) loadHands();
-  if (name === "connect" && !$("#bot-sample").textContent) loadConnect();
-  if (name === "live") startBroadcast();
+  if (name === "connect" && !$("#join-form").dataset.bound) loadConnect();
+  if (name === "home") startBroadcast();
   else stopBroadcast();
   if (name !== "hands") stopReplay();
 }

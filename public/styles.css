@@ -87,6 +87,8 @@ table.board tbody tr:hover, table.board tr.selected { background: #22291f; }
 figcaption { color: var(--muted); margin-bottom: 8px; }
 .spark { width: 100%; height: 72px; display: block; margin: 8px 0 14px; }
 
+.rankings-block { margin-top: 36px; padding-top: 8px; border-top: 1px solid var(--line); }
+.rankings-block h2 { font-size: 1.8rem; margin: 0 0 8px; }
 .felt-wrap { margin: 28px 8px 12px; }
 .felt {
   position: relative; height: 520px; border-radius: 220px;

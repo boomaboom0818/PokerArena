@@ -5,14 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=11">
+<link rel="stylesheet" href="/styles.css?v=12">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="#rankings">Poker<span>Arena</span></a>
+  <a class="brand" href="#home">Poker<span>Arena</span></a>
   <nav>
-    <a href="#rankings" data-nav="rankings">Rankings</a>
-    <a href="#live" data-nav="live">Live</a>
+    <a href="#home" data-nav="home">Live</a>
     <a href="#hands" data-nav="hands">Hands</a>
     <a href="#connect" data-nav="connect">Connect a bot</a>
   </nav>
@@ -20,46 +19,7 @@
 </header>
 
 <main>
-  <section id="rankings" class="view">
-    <div class="hero">
-      <div>
-        <p class="kicker">6-max no-limit · multiplayer Elo</p>
-        <h1>Who is actually winning?</h1>
-        <p class="lede">Every bot sits 6-handed, stacks reset each hand, and Elo moves from who won the match. The ± column is a 95% error bar on bb/100 — poker is noisy, so read the rating next to it.</p>
-      </div>
-      <div class="hero-stats" id="hero-stats"></div>
-    </div>
-    <div class="toolbar">
-      <input id="bot-filter" type="search" placeholder="Filter bots" aria-label="Filter bots">
-      <label class="check"><input type="checkbox" id="min-hands"> hide bots under 100 hands</label>
-    </div>
-    <div class="table-wrap">
-      <table class="board" id="lb">
-        <thead>
-          <tr>
-            <th data-sort="rank">#</th>
-            <th data-sort="bot">Bot</th>
-            <th data-sort="elo">Elo</th>
-            <th data-sort="matches">Matches</th>
-            <th data-sort="hands">Hands</th>
-            <th data-sort="bb100">bb/100</th>
-            <th data-sort="ci95">±95%</th>
-            <th data-sort="vpip">VPIP</th>
-            <th data-sort="pfr">PFR</th>
-            <th data-sort="af">AF</th>
-            <th data-sort="match_wins">Wins</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <aside class="panel" id="bot-card">
-      <h2>Pick a bot</h2>
-      <p class="muted">Click a row to see its rating history and recent matches.</p>
-    </aside>
-  </section>
-
-  <section id="live" class="view" hidden>
+  <section id="home" class="view">
     <div class="section-head">
       <div>
         <p class="kicker">Spectator</p>
@@ -73,6 +33,44 @@
     <p class="logline" id="action-log">Tuning in…</p>
     <div class="felt-wrap">
       <div class="felt" id="felt" aria-label="Poker table"></div>
+    </div>
+    <div class="rankings-block" id="rankings">
+      <div class="hero">
+        <div>
+          <p class="kicker">6-max no-limit · multiplayer Elo</p>
+          <h2>Who is actually winning?</h2>
+          <p class="lede">Every bot sits 6-handed, stacks reset each hand, and Elo moves from who won the match. The ± column is a 95% error bar on bb/100.</p>
+        </div>
+        <div class="hero-stats" id="hero-stats"></div>
+      </div>
+      <div class="toolbar">
+        <input id="bot-filter" type="search" placeholder="Filter bots" aria-label="Filter bots">
+        <label class="check"><input type="checkbox" id="min-hands"> hide bots under 100 hands</label>
+      </div>
+      <div class="table-wrap">
+        <table class="board" id="lb">
+          <thead>
+            <tr>
+              <th data-sort="rank">#</th>
+              <th data-sort="bot">Bot</th>
+              <th data-sort="elo">Elo</th>
+              <th data-sort="matches">Matches</th>
+              <th data-sort="hands">Hands</th>
+              <th data-sort="bb100">bb/100</th>
+              <th data-sort="ci95">±95%</th>
+              <th data-sort="vpip">VPIP</th>
+              <th data-sort="pfr">PFR</th>
+              <th data-sort="af">AF</th>
+              <th data-sort="match_wins">Wins</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <aside class="panel" id="bot-card">
+        <h2>Pick a bot</h2>
+        <p class="muted">Click a row to see its rating history and recent matches.</p>
+      </aside>
     </div>
   </section>
 
@@ -146,6 +144,6 @@ cd PokerArena</pre>
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
 </footer>
-<script src="/app.js?v=14"></script>
+<script src="/app.js?v=15"></script>
 </body>
 </html>
