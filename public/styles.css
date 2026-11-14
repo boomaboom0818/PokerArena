@@ -173,6 +173,29 @@ figcaption { color: var(--muted); margin-bottom: 8px; }
 .script-line { padding: 4px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .street { color: var(--gold); margin-top: 10px; letter-spacing: 0.08em; font-size: 0.8rem; }
 
+.join-box {
+  display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 16px;
+  padding: 16px 18px; margin: 8px 0 18px;
+}
+.join-box label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 0.85rem; }
+.join-box input[type="text"] {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; min-width: 220px; color: var(--ink);
+}
+.join-box button.primary, .replay-bar button.on, .copy {
+  background: var(--gold); color: #1a140c; border: 1px solid var(--gold);
+  border-radius: 999px; padding: 10px 16px; cursor: pointer;
+}
+.join-status { margin: 0; color: var(--up); }
+.join-steps { list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 14px; }
+.join-steps li {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px;
+}
+.join-steps strong { display: block; margin-bottom: 8px; }
+.join-steps .copy { margin-top: 10px; }
+details.panel summary { cursor: pointer; font-size: 1.05rem; }
+details.panel ul { margin-top: 12px; }
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 8px 0 18px; }
 .step {
   border: 1px solid var(--line); border-radius: 14px; padding: 14px;

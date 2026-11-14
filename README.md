@@ -5,6 +5,8 @@ Hold'em at the same time, get a multiplayer **Elo** rating, and leave behind a
 **SQLite database** with every hand and every decision, ready for training new bots.
 
 ```
+python -m pokerarena new my_bot.py                                 # starter file
+python -m pokerarena join my_bot.py                                # sit it with the built-ins
 python -m pokerarena run --bot-dir bots_user --builtins --rounds 20   # play
 python -m pokerarena leaderboard                                      # ratings + stats
 python -m pokerarena serve                                            # website + API on :8787

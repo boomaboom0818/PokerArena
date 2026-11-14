@@ -8,6 +8,7 @@ from urllib.request import urlopen
 
 from pokerarena.arena import Arena, ArenaConfig
 from pokerarena.bots import builtin_specs
+from pokerarena.starter import starter_source
 from pokerarena.http_api import (
     BROADCAST_EPOCH,
     BROADCAST_STEP_S,
@@ -15,6 +16,7 @@ from pokerarena.http_api import (
     hand_payload,
     leaderboard_payload,
     live_frame,
+    playable_bot_names,
     seat_tables,
 )
 from pokerarena.storage import Store
@@ -96,6 +98,23 @@ class ApiPayloadTests(unittest.TestCase):
             seated.extend(broadcast_frame(BROADCAST_EPOCH, table=i, store=self.store)["names"])
         self.assertIn("tag", seated)
         self.assertIn("equity", seated)
+
+    def test_a_missing_bot_file_is_not_seated(self):
+        self.store.register_bot(
+            "gone_bot",
+            '{"kind":"file","target":"/tmp/does-not-exist-pokerarena.py","class_name":"Gone"}',
+            "",
+            1500,
+        )
+        names = playable_bot_names(self.store)
+        self.assertNotIn("gone_bot", names)
+        frame = broadcast_frame(BROADCAST_EPOCH, table=0, store=self.store)
+        self.assertIn("seats", frame["frame"])
+
+    def test_starter_is_a_bot_file(self):
+        src = starter_source("my bot!")
+        self.assertIn('name = "my_bot"', src)
+        self.assertIn("def act", src)
 
     def tearDown(self):
         self.store.close()

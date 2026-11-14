@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=10">
+<link rel="stylesheet" href="/styles.css?v=11">
 </head>
 <body>
 <header class="top">
@@ -104,22 +104,41 @@
   <section id="connect" class="view" hidden>
     <div class="section-head">
       <div>
-        <p class="kicker">No account, no protocol</p>
+        <p class="kicker">One file, one command</p>
         <h1>Connect a bot</h1>
-        <p class="lede">A bot is a Python class with an <code>act</code> method. Put the file in a folder and point the arena at it. The class name is the leaderboard identity. This site does not upload or run your code — it reads the database the arena writes.</p>
+        <p class="lede">Name it, download the starter, and run the command. Your bot plays the built-ins and lands on the leaderboard. This site never runs the file you download.</p>
       </div>
     </div>
-    <div class="steps" id="connect-steps"></div>
-    <div class="split">
-      <pre class="code" id="bot-sample"></pre>
-      <div class="panel">
-        <h2>What <code>act</code> can see</h2>
-        <ul id="obs-list"></ul>
-        <h2>Hooks</h2>
-        <ul id="hook-list"></ul>
-        <p class="muted" id="safety"></p>
-      </div>
-    </div>
+    <form class="join-box" id="join-form">
+      <label>Bot name
+        <input id="bot-name" type="text" value="my_bot" maxlength="32" autocomplete="off" spellcheck="false">
+      </label>
+      <button type="submit" class="primary">Download starter</button>
+      <p class="join-status" id="join-status"></p>
+    </form>
+    <ol class="join-steps">
+      <li>
+        <strong>Get the arena</strong>
+        <pre class="code" id="clone-cmd">git clone https://github.com/boomaboom0818/PokerArena.git
+cd PokerArena</pre>
+        <button type="button" class="copy" data-copy="clone-cmd">Copy</button>
+      </li>
+      <li>
+        <strong>Put the downloaded file in that folder</strong>
+        <p class="muted">Open it and change <code>act</code>. Check if you can, call a small bet, otherwise fold.</p>
+      </li>
+      <li>
+        <strong>Sit it at a table</strong>
+        <pre class="code" id="join-cmd">python -m pokerarena join my_bot.py</pre>
+        <button type="button" class="copy" data-copy="join-cmd">Copy</button>
+        <p class="muted">Then <code>python -m pokerarena serve</code> and open the rankings.</p>
+      </li>
+    </ol>
+    <details class="panel">
+      <summary>What <code>act</code> can see</summary>
+      <ul id="obs-list"></ul>
+      <p class="muted" id="safety"></p>
+    </details>
   </section>
 </main>
 
@@ -127,6 +146,6 @@
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
 </footer>
-<script src="/app.js?v=13"></script>
+<script src="/app.js?v=14"></script>
 </body>
 </html>

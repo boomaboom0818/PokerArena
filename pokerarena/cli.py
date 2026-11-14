@@ -11,6 +11,7 @@ from .bots import BUILTIN, builtin_specs, spec_from_string, specs_from_dir
 from .dataset import export_csv, export_jsonl, iter_decisions, iter_hands
 from .elo import EloConfig
 from .replay import format_hand
+from .starter import starter_source
 from .storage import Store
 
 
@@ -23,6 +24,44 @@ def print_leaderboard(rows) -> None:
         print(f"{i:>2} {r['bot']:<18}{r['elo']:>7.0f}{r['matches']:>8}{r['hands']:>9}"
               f"{r['bb100']:>9.1f}{1.96 * r['stderr']:>7.1f}{r['vpip']:>6.0f}{r['pfr']:>6.0f}"
               f"{r['af']:>5.1f}{r['match_wins']:>6}")
+
+
+def cmd_new(args) -> None:
+    from pathlib import Path
+
+    path = Path(args.path)
+    if path.exists() and not args.force:
+        raise SystemExit(f"{path} already exists. Pass --force to replace it.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(starter_source(args.name or path.stem))
+    print(f"wrote {path}")
+    print(f"next: python -m pokerarena join {path}")
+
+
+def cmd_join(args) -> None:
+    specs = spec_from_string(args.bot)
+    if not specs:
+        raise SystemExit(f"no Bot subclass in {args.bot}")
+    field = builtin_specs()
+    seen = {s.name for s in field}
+    added = []
+    for spec in specs:
+        if spec.name in seen:
+            raise SystemExit(f"{spec.name} is already a built-in. Give your class a different name.")
+        seen.add(spec.name)
+        added.append(spec)
+    store = Store(args.db)
+    cfg = ArenaConfig(hands_per_match=args.hands, workers=1, seed=args.seed)
+    arena = Arena(store, field + added, cfg)
+    print(f"sitting {', '.join(s.name for s in added)} with {len(field)} built-in bots")
+    print(f"{cfg.normalized_hands()} hands, {args.rounds} round(s) -> {args.db}")
+    arena.run(args.rounds)
+    mine = {s.name for s in added}
+    rows = [r for r in store.leaderboard() if r["bot"] in mine]
+    print()
+    print_leaderboard(rows)
+    print(f"\nsaved to {args.db}")
+    print("watch it: python -m pokerarena serve")
 
 
 def cmd_bots(args) -> None:
@@ -107,6 +146,19 @@ def main(argv=None) -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("bots", help="list built-in bots").set_defaults(fn=cmd_bots)
+
+    new = sub.add_parser("new", help="write a starter bot file")
+    new.add_argument("path", help="where to write the .py file, for example my_bot.py")
+    new.add_argument("--name", help="leaderboard name (default: the file name)")
+    new.add_argument("--force", action="store_true")
+    new.set_defaults(fn=cmd_new)
+
+    join = sub.add_parser("join", help="play your bot against the built-ins and save the rating")
+    join.add_argument("bot", help="path to a .py file, or file.py:Class")
+    join.add_argument("--rounds", type=int, default=1)
+    join.add_argument("--hands", type=int, default=60)
+    join.add_argument("--seed", type=int, default=0)
+    join.set_defaults(fn=cmd_join)
 
     r = sub.add_parser("run", help="run tournament rounds (every bot sits at a 6-seat table each round)")
     r.add_argument("--bots", nargs="*", help="built-in names, file.py, file.py:Class or module:Class")

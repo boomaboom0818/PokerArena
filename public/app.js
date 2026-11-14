@@ -501,20 +501,74 @@ async function openHand(id) {
   playReplay();
 }
 
+function botSlug(raw) {
+  const slug = (raw || "my_bot").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug && !/^[0-9]/.test(slug) ? slug.slice(0, 32) : "my_bot";
+}
+
+function refreshJoin() {
+  const name = botSlug($("#bot-name").value);
+  $("#join-cmd").textContent = "python -m pokerarena join " + name + ".py";
+}
+
 async function loadConnect() {
-  let guide;
-  try {
-    guide = await api("/api/connect");
-  } catch (err) {
-    $("#bot-sample").textContent = err.message;
-    return;
+  const form = $("#join-form");
+  if (!form.dataset.bound) {
+    form.dataset.bound = "1";
+    $("#bot-name").addEventListener("input", refreshJoin);
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const name = botSlug($("#bot-name").value);
+      $("#bot-name").value = name;
+      refreshJoin();
+      const status = $("#join-status");
+      status.textContent = "Preparing the file…";
+      try {
+        const res = await fetch(API + "/api/connect/starter?name=" + encodeURIComponent(name));
+        if (!res.ok) throw new Error("could not build the starter");
+        const kind = res.headers.get("content-type") || "";
+        let blob = null;
+        let filename = name + ".py";
+        if (kind.includes("json")) {
+          const data = await res.json();
+          blob = new Blob([data.source || ""], { type: "text/x-python" });
+          filename = (data.filename || name).replace(/[^\w.-]+/g, "_") + ".py";
+        } else {
+          blob = await res.blob();
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        status.textContent = "Downloaded " + name + ".py. Put it in the PokerArena folder, then run the command below.";
+      } catch (err) {
+        status.textContent = err.message;
+      }
+    });
+    $$(".copy").forEach((btn) => btn.addEventListener("click", async () => {
+      const text = $("#" + btn.dataset.copy).textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = "Copied";
+        setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+      } catch (err) {
+        btn.textContent = "Select the command";
+      }
+    }));
   }
-  $("#connect-steps").innerHTML = (guide.run || []).map((cmd, i) => `
-    <div class="step"><em>0${i + 1}</em><pre class="code">${cmd}</pre></div>`).join("");
-  $("#bot-sample").textContent = guide.minimal_bot || "";
-  $("#obs-list").innerHTML = (guide.observation || []).map((t) => `<li>${t}</li>`).join("");
-  $("#hook-list").innerHTML = (guide.hooks || []).map((t) => `<li>${t}</li>`).join("");
-  $("#safety").textContent = guide.safety || "";
+  refreshJoin();
+  try {
+    const guide = await api("/api/connect");
+    if (guide.repo) {
+      $("#clone-cmd").textContent = "git clone " + guide.repo + ".git\ncd PokerArena";
+    }
+    $("#obs-list").innerHTML = (guide.observation || []).map((t) => `<li>${t}</li>`).join("");
+    $("#safety").textContent = guide.safety || "";
+  } catch (err) {
+    $("#join-status").textContent = err.message;
+  }
 }
 
 boot();

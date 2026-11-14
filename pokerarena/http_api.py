@@ -33,6 +33,7 @@ from .cards import card_str
 from .engine import Table
 from .evaluator import CATEGORY_NAMES, category
 from .models import STREETS
+from .starter import starter_source
 from .storage import Store
 
 MAX_BODY = 64_000
@@ -198,7 +199,10 @@ def hand_payload(store: Store, hand_id: int) -> dict | None:
 
 
 CONNECT_GUIDE = {
-    "summary": "A bot is a Python class. Drop the file in a folder and the arena loads it. No account, no network protocol.",
+    "summary": "Download a starter, then run one command. Your bot sits with the built-ins and gets an Elo.",
+    "repo": "https://github.com/boomaboom0818/PokerArena",
+    "join": "python -m pokerarena join {file}",
+    "serve": "python -m pokerarena serve",
     "minimal_bot": '''from pokerarena.bots import Bot
 from pokerarena.models import Action, Observation
 
@@ -274,19 +278,35 @@ def seat_tables(names: list[str], size: int = TABLE_SIZE) -> list[list[str]]:
     return tables
 
 
-def broadcast_lineup(store=None) -> list[list[str]]:
-    """Tables for every bot the arena knows, plus the built-ins."""
+def playable_bot_names(store=None) -> list[str]:
+    """Bots this process can actually sit. A missing file is skipped, not crashed."""
     names: list[str] = []
     if store is not None:
         try:
-            names = [r["bot_id"] for r in store.db.execute(
-                "SELECT bot_id FROM bots ORDER BY bot_id")]
+            rows = store.db.execute("SELECT bot_id, spec_json FROM bots ORDER BY bot_id")
         except Exception:
-            names = []
+            rows = []
+        for row in rows:
+            name = row["bot_id"]
+            if name in BUILTIN:
+                names.append(name)
+                continue
+            try:
+                spec = json.loads(row["spec_json"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            target = spec.get("target") or ""
+            if spec.get("kind") == "file" and target and Path(target).is_file():
+                names.append(name)
     for name in sorted(BUILTIN):
         if name not in names:
             names.append(name)
-    return seat_tables(names)
+    return names
+
+
+def broadcast_lineup(store=None) -> list[list[str]]:
+    """Tables for every bot this process can load, plus the built-ins."""
+    return seat_tables(playable_bot_names(store))
 
 
 def broadcast_frame(now: float | None = None, table: int = 0, store=None) -> dict:
@@ -739,6 +759,18 @@ def make_handler(store: Store):
                 return
             if method == "GET" and path == "/api/connect":
                 self._send(200, CONNECT_GUIDE)
+                return
+            if method == "GET" and path == "/api/connect/starter":
+                name = (qs.get("name") or ["my_bot"])[0]
+                body = starter_source(name).encode()
+                slug = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in name.strip()).strip("_") or "my_bot"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/x-python; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{slug}.py"')
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
                 return
             if method == "GET" and path == "/api/live":
                 table = int(qs.get("table", ["0"])[0])

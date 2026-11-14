@@ -29,6 +29,7 @@ from pokerarena.http_api import (  # noqa: E402
     list_matches,
     broadcast_frame,
 )
+from pokerarena.starter import starter_source  # noqa: E402
 from pokerarena.storage import Store  # noqa: E402
 
 _STORE = None
@@ -99,6 +100,9 @@ def dispatch(method: str, path: str, qs: dict, body: dict):
         return (200, payload) if payload else (404, {"error": "unknown hand"})
     if path == "/api/connect":
         return 200, CONNECT_GUIDE
+    if path == "/api/connect/starter":
+        name = (qs.get("name") or ["my_bot"])[0]
+        return 200, {"source": starter_source(name), "filename": name}
     if path == "/api/live":
         return 200, broadcast_frame(table=int((qs.get("table") or ["0"])[0]), store=db)
     return 404, {"error": "not found", "path": path}
