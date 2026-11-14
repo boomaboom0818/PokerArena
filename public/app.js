@@ -112,7 +112,7 @@ async function refreshLeaderboard() {
     ["Top Elo", top ? Math.round(top.elo) : "—"],
   ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join("");
   renderLeaderboard();
-  if (leaderboard[0]) selectBot(leaderboard[0].bot);
+  if (!selectedBot && leaderboard[0]) selectBot(leaderboard[0].bot);
 }
 
 function renderLeaderboard() {
@@ -145,9 +145,14 @@ function renderLeaderboard() {
 }
 
 async function selectBot(name) {
+  if (name === selectedBot && $("#bot-card").dataset.ready === name) {
+    $$("#lb tbody tr[data-bot]").forEach((tr) => tr.classList.toggle("selected", tr.dataset.bot === name));
+    return;
+  }
   selectedBot = name;
   renderLeaderboard();
   const card = $("#bot-card");
+  card.dataset.ready = "";
   card.innerHTML = `<h2>${name}</h2><p class="muted">Loading…</p>`;
   try {
     const d = await api("/api/bots/" + encodeURIComponent(name));
@@ -164,6 +169,7 @@ async function selectBot(name) {
           · Elo ${Math.round(m.elo_before)} → ${Math.round(m.elo_after)}
         </div>`).join("") || "<p class='muted'>No matches yet.</p>"}
       <p><a href="#hands" id="see-hands">See this bot's hands</a></p>`;
+    card.dataset.ready = name;
     $("#see-hands").addEventListener("click", () => {
       location.hash = "hands";
       loadHands(name);
