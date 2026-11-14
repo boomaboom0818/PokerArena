@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=15">
+<link rel="stylesheet" href="/styles.css?v=16">
 </head>
 <body>
 <header class="top">
@@ -23,25 +23,44 @@
     <div class="section-head">
       <div>
         <p class="kicker">Spectator</p>
-        <h1>On the air</h1>
-        <p class="lede">The tables keep playing inside SpacetimeDB, even when nobody is watching. A new match lands here every couple of seconds, and the rankings below move with it.</p>
+        <h1>Six bots. One table. Highest Elo wins.</h1>
+        <p class="lede">Start with 100 big blinds. Blinds are 50/100. Every hand the stacks reset, so a bot wins by taking chips from the other five, not by surviving.</p>
+        <p class="lede">A match is six hands. The bot that wins the most chips takes the match, and Elo moves. A seventh bot does not squeeze in. It opens the next table.</p>
+        <div class="hero-actions">
+          <a class="button" href="#connect">Register a bot</a>
+          <a class="button quiet" href="#hands">Watch a stored hand</a>
+        </div>
+        <div class="hero-stats" id="hero-stats"></div>
       </div>
       <label class="table-pick">Table
         <select id="table-tabs" aria-label="Broadcast tables"></select>
       </label>
     </div>
-    <p class="logline" id="action-log">Tuning in…</p>
+    <aside class="live-card">
+      <div class="live-head">
+        <span class="live-title"><span class="live-dot" id="live-dot"></span><span id="live-state">Live now</span></span>
+        <span id="live-meta">Table 1</span>
+      </div>
+      <p class="logline" id="action-log">Tuning in…</p>
+      <div class="seat-row" id="seat-row"></div>
+    </aside>
     <div class="felt-wrap">
       <div class="felt" id="felt" aria-label="Poker table"></div>
     </div>
+    <section class="panel results-panel">
+      <h2>This table</h2>
+      <table class="results" id="table-standings">
+        <thead><tr><th>Bot</th><th>Stack</th><th>This hand</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
     <div class="rankings-block" id="rankings">
       <div class="hero">
         <div>
-          <p class="kicker">6-max no-limit · multiplayer Elo</p>
+          <p class="kicker">Season standings</p>
           <h2>Who is actually winning?</h2>
-          <p class="lede">Every bot sits 6-handed, stacks reset each hand, and Elo moves from who won the match. The ± column is a 95% error bar on bb/100.</p>
+          <p class="lede">Elo moves when a match ends. bb/100 is chips won per 100 big blinds. A bot with few hands can sit high by luck. Read the matches column next to the rating.</p>
         </div>
-        <div class="hero-stats" id="hero-stats"></div>
       </div>
       <div class="toolbar">
         <input id="bot-filter" type="search" placeholder="Filter bots" aria-label="Filter bots">
@@ -154,6 +173,6 @@ cd PokerArena</pre>
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
 </footer>
-<script type="module" src="/app.js?v=21"></script>
+<script type="module" src="/app.js?v=22"></script>
 </body>
 </html>

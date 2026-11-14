@@ -106,10 +106,11 @@ async function refreshLeaderboard() {
     $("#lb tbody").innerHTML = `<tr><td colspan="11">Could not load rankings. ${err.message}</td></tr>`;
   }
   const top = leaderboard[0];
+  const matches = leaderboard.reduce((n, r) => n + (r.matches || 0), 0);
   $("#hero-stats").innerHTML = [
     ["Bots", leaderboard.length],
+    ["Matches", matches],
     ["Leader", top ? top.bot : "—"],
-    ["Top Elo", top ? Math.round(top.elo) : "—"],
   ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join("");
   renderLeaderboard();
   if (!selectedBot && leaderboard[0]) selectBot(leaderboard[0].bot);
@@ -239,7 +240,20 @@ async function tune() {
     live.stamp = stamp;
     live.frame = data.frame;
     renderFelt($("#felt"), data.frame || emptyFrame());
-    $("#action-log").textContent = (data.frame && data.frame.log) || describe(data.frame);
+    const frame = data.frame || {};
+    $("#action-log").textContent = frame.log || describe(frame);
+    const seats = frame.seats || [];
+    $("#seat-row").innerHTML = seats.map((s) => `<span class="seat-chip">${s.bot}</span>`).join("")
+      + Array.from({ length: Math.max(0, 6 - seats.length) }, () => `<span class="seat-chip open">open seat</span>`).join("");
+    $("#table-standings tbody").innerHTML = seats.map((s) => `
+      <tr>
+        <td>${s.bot}</td>
+        <td>${(s.stack || 0).toLocaleString()}</td>
+        <td class="${(s.net || 0) >= 0 ? "up" : "down"}">${s.net == null ? "—" : money(s.net)}</td>
+      </tr>`).join("");
+    $("#live-meta").textContent = `Table ${(data.table || 0) + 1} · ${data.hands_saved || 0} hands saved`;
+    $("#live-state").textContent = data.playing ? "Live now" : "Paused";
+    $("#live-dot").classList.toggle("paused", !data.playing);
     if (data.playing && data.hands_saved && data.hands_saved !== live.saved) {
       live.saved = data.hands_saved;
       refreshLeaderboard();
