@@ -314,49 +314,62 @@ function rate(ctx: Ctx, names: string[], nets: number[]): void {
   });
 }
 
-function field(ctx: Ctx): { names: string[]; sources: Record<string, string> } {
+function field(ctx: Ctx): { tables: string[][]; sources: Record<string, string> } {
   const rows = [...ctx.db.bot.iter()];
   const users = rows.filter(r => r.source && r.source !== BUILTIN_SOURCE).map(r => r.name).sort();
   const names = [...NAMES, ...users];
   const sources: Record<string, string> = {};
   for (const row of rows) sources[row.name] = row.source;
-  return { names, sources };
+  const tables: string[][] = [];
+  for (let i = 0; i < names.length; i += TABLE_SIZE) {
+    const chunk = names.slice(i, i + TABLE_SIZE);
+    if (chunk.length >= 2) tables.push(chunk);
+  }
+  return { tables, sources };
 }
 
 function playMatch(ctx: Ctx): void {
   const seed = Number(ctx.timestamp.microsSinceUnixEpoch % 1_000_000_007n);
-  const { names, sources } = field(ctx);
-  const nets = names.map(() => 0);
-  let last = playHand(names, 0, seed, sources);
-  for (let hand = 0; hand < MATCH_HANDS; hand++) {
-    last = playHand(names, hand, seed, sources);
-    last.seats.forEach((s, i) => { nets[i] += s.net; });
+  const { tables, sources } = field(ctx);
+  const liveIds = new Set<number>();
+  tables.forEach((names, tableId) => {
+    if (names.length !== TABLE_SIZE) return;
+    liveIds.add(tableId);
+    const nets = names.map(() => 0);
+    let last = playHand(names, 0, seed + tableId * 1009, sources);
+    for (let hand = 0; hand < MATCH_HANDS; hand++) {
+      last = playHand(names, hand, seed + tableId * 1009, sources);
+      last.seats.forEach((s, i) => { nets[i] += s.net; });
+    }
+    rate(ctx, names, nets);
+    const seats = last.seats.map(s => ({
+      bot: s.name,
+      stack: s.stack,
+      bet: 0,
+      folded: s.folded,
+      hole: s.hole.map(cardStr),
+      net: s.net,
+      position: 'seat',
+    }));
+    const existing = ctx.db.tableState.tableId.find(tableId);
+    const row = {
+      tableId,
+      names: names.join(','),
+      handNo: MATCH_HANDS,
+      phase: 'result',
+      board: last.board,
+      pot: last.pot,
+      actor: '',
+      log: last.log,
+      seats: JSON.stringify(seats),
+      handsSaved: (existing?.handsSaved ?? 0) + MATCH_HANDS,
+    };
+    if (existing) ctx.db.tableState.tableId.update(row);
+    else ctx.db.tableState.insert(row);
+  });
+  for (const old of ctx.db.tableState.iter()) {
+    if (!liveIds.has(old.tableId)) ctx.db.tableState.tableId.delete(old.tableId);
   }
-  rate(ctx, names, nets);
-  const seats = last.seats.map(s => ({
-    bot: s.name,
-    stack: s.stack,
-    bet: 0,
-    folded: s.folded,
-    hole: s.hole.map(cardStr),
-    net: s.net,
-    position: 'seat',
-  }));
-  const existing = ctx.db.tableState.tableId.find(0);
-  const row = {
-    tableId: 0,
-    names: names.join(','),
-    handNo: MATCH_HANDS,
-    phase: 'result',
-    board: last.board,
-    pot: last.pot,
-    actor: '',
-    log: last.log,
-    seats: JSON.stringify(seats),
-    handsSaved: (existing?.handsSaved ?? 0) + MATCH_HANDS,
-  };
-  if (existing) ctx.db.tableState.tableId.update(row);
-  else ctx.db.tableState.insert(row);
 }
 
 export const init = spacetimedb.init(ctx => {
@@ -366,6 +379,15 @@ export const init = spacetimedb.init(ctx => {
   ctx.db.tickTimer.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.interval(2_000_000n) });
   playMatch(ctx);
 });
+
+export const removeBot = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    if (NAMES.includes(name)) return;
+    const row = ctx.db.bot.name.find(name);
+    if (row) ctx.db.bot.name.delete(name);
+  }
+);
 
 export const connectBot = spacetimedb.reducer(
   { name: t.string(), source: t.string() },

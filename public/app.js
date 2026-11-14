@@ -1,4 +1,4 @@
-import { leaderboard as stdbBoard, liveTable } from "./stdb.js";
+import { leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -215,6 +215,7 @@ function showTables(n) {
     box.dataset.bound = "1";
     box.addEventListener("change", () => {
       live.table = Number(box.value) || 0;
+      pickTable(live.table);
       live.cursor = -1;
       tune();
     });

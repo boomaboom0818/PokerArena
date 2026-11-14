@@ -26,16 +26,23 @@ function rows(result) {
   });
 }
 
+let pickedTable = 0;
+
+export function pickTable(id) {
+  pickedTable = Number(id) || 0;
+}
+
 export async function liveTable() {
-  const result = await sql("SELECT * FROM table_state WHERE table_id = 0");
-  const row = rows(result)[0];
-  if (!row) return { playing: false, tables: 0, frame: { seats: [], board: [], pot: 0 } };
+  const result = await sql("SELECT * FROM table_state");
+  const all = rows(result);
+  if (!all.length) return { playing: false, tables: 0, frame: { seats: [], board: [], pot: 0 } };
+  const row = all.find((r) => Number(r.table_id) === pickedTable) || all[0];
   const seats = JSON.parse(row.seats || "[]").map((s, i) => ({ ...s, seat: i, is_button: i === 0 }));
   return {
     live: true,
     playing: true,
-    tables: 1,
-    table: 0,
+    tables: all.length,
+    table: Number(row.table_id),
     names: String(row.names || "").split(",").filter(Boolean),
     hand_no: row.hand_no,
     hands_saved: row.hands_saved,
