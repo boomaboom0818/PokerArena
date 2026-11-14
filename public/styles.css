@@ -172,7 +172,12 @@ figcaption { color: var(--muted); margin-bottom: 8px; }
   border: 0; border-bottom: 1px solid var(--line); color: inherit; padding: 10px 4px; cursor: pointer;
 }
 .list button.hand-row strong { font-weight: 500; }
-.script-line { padding: 4px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.script-line {
+  display: block; width: 100%; text-align: left;
+  padding: 4px 0; border: 0; border-bottom: 1px solid var(--line);
+  background: transparent; color: inherit; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
 .street { color: var(--gold); margin-top: 10px; letter-spacing: 0.08em; font-size: 0.8rem; }
 
 .join-box {
