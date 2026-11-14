@@ -100,7 +100,7 @@ def dispatch(method: str, path: str, qs: dict, body: dict):
     if path == "/api/connect":
         return 200, CONNECT_GUIDE
     if path == "/api/live":
-        return 200, broadcast_frame(table=int((qs.get("table") or ["0"])[0]))
+        return 200, broadcast_frame(table=int((qs.get("table") or ["0"])[0]), store=db)
     return 404, {"error": "not found", "path": path}
 
 

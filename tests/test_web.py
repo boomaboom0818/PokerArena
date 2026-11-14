@@ -15,6 +15,7 @@ from pokerarena.http_api import (
     hand_payload,
     leaderboard_payload,
     live_frame,
+    seat_tables,
 )
 from pokerarena.storage import Store
 
@@ -61,10 +62,21 @@ class LiveFrameTests(unittest.TestCase):
 
     def test_broadcast_ignores_a_request_trying_to_pick_the_game(self):
         # The public route takes only a table index. A huge index wraps.
-        wrapped = broadcast_frame(BROADCAST_EPOCH, table=2)
-        first = broadcast_frame(BROADCAST_EPOCH, table=0)
-        self.assertEqual(wrapped["table"], 0)
+        wrapped = broadcast_frame(BROADCAST_EPOCH, table=99)
+        first = broadcast_frame(BROADCAST_EPOCH, table=wrapped["table"])
         self.assertEqual(wrapped["names"], first["names"])
+        self.assertGreaterEqual(wrapped["tables"], 1)
+
+    def test_more_bots_open_more_tables(self):
+        self.assertEqual(len(seat_tables(["a", "b", "c", "d", "e", "f"])), 1)
+        two = seat_tables(["a", "b", "c", "d", "e", "f", "g"])
+        self.assertEqual(len(two), 2)
+        self.assertEqual(len(two[0]), 6)
+        self.assertEqual(len(two[1]), 6)
+        self.assertIn("g", two[1])
+        many = seat_tables([f"bot{i}" for i in range(60)])
+        self.assertEqual(len(many), 10)
+        self.assertTrue(all(len(t) == 6 for t in many))
 
 
 class ApiPayloadTests(unittest.TestCase):
@@ -74,6 +86,16 @@ class ApiPayloadTests(unittest.TestCase):
         self.store = Store(self.tmp.name)
         specs = builtin_specs(["tag", "nit", "lag", "rock", "calling_station", "maniac"])
         Arena(self.store, specs, ArenaConfig(hands_per_match=6, workers=1, seed=2)).run(1)
+
+    def test_registered_bots_seat_extra_tables(self):
+        frame = broadcast_frame(BROADCAST_EPOCH, table=0, store=self.store)
+        # six played bots plus the built-ins that have not sat yet
+        self.assertGreater(frame["tables"], 1)
+        seated = []
+        for i in range(frame["tables"]):
+            seated.extend(broadcast_frame(BROADCAST_EPOCH, table=i, store=self.store)["names"])
+        self.assertIn("tag", seated)
+        self.assertIn("equity", seated)
 
     def tearDown(self):
         self.store.close()

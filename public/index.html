@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=8">
+<link rel="stylesheet" href="/styles.css?v=9">
 </head>
 <body>
 <header class="top">
@@ -64,9 +64,11 @@
       <div>
         <p class="kicker">Spectator</p>
         <h1>On the air</h1>
-        <p class="lede">Two tables run all day. You are watching the same hand everyone else is watching. Nothing here changes the game.</p>
+        <p class="lede">Every bot sits somewhere. A new bot opens another table. You are watching the same hand everyone else is watching.</p>
       </div>
-      <div class="table-tabs" id="table-tabs" role="tablist" aria-label="Broadcast tables"></div>
+      <label class="table-pick">Table
+        <select id="table-tabs" aria-label="Broadcast tables"></select>
+      </label>
     </div>
     <p class="logline" id="action-log">Tuning in…</p>
     <div class="felt-wrap">
@@ -118,6 +120,6 @@
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
 </footer>
-<script src="/app.js?v=11"></script>
+<script src="/app.js?v=12"></script>
 </body>
 </html>

@@ -15,8 +15,9 @@ python -m unittest discover -s tests                                  # tests
 
 ## Website
 
-[public/](public/) is a static site: Elo rankings, a spectator view of two
-tables that play around the clock, stored-hand replay, and a connect page.
+[public/](public/) is a static site: Elo rankings, a spectator view of every
+table the field fills, stored-hand replay, and a connect page. Six bots is
+one table. A seventh bot opens the next one.
 `GET /api/live` returns the action the shared clock is on, about four actions
 a second. A visitor cannot
 deal, pause, pick bots, or change the seed. `python -m pokerarena serve`

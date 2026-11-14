@@ -243,32 +243,72 @@ BROADCAST_STEP_S = 0.22
 # Every shoe occupies the same number of steps, so the clock is a division,
 # not a walk back to the epoch. A short shoe holds its last action until the slot ends.
 BROADCAST_SLOT = 400
-BROADCAST_TABLES = [
-    ["tag", "lag", "nit", "equity", "calling_station", "maniac"],
-    ["equity_lag", "rock", "tag", "random", "nit", "lag"],
+# Shown only when the database has no bots yet. A real field replaces this.
+BROADCAST_FALLBACK = [
+    "tag", "lag", "nit", "equity", "calling_station", "maniac",
+    "equity_lag", "rock", "random",
 ]
 BROADCAST_HANDS = 8
+TABLE_SIZE = 6
 
 
-def broadcast_frame(now: float | None = None, table: int = 0) -> dict:
-    """The action the arena is on at ``now``, for one of the fixed tables.
+def seat_tables(names: list[str], size: int = TABLE_SIZE) -> list[list[str]]:
+    """Fill as many ``size``-seat tables as the field needs.
+
+    Every bot sits once. A short last table is topped up from earlier tables
+    so a spectator still sees a full game. Ten bots is two tables, not one.
+    """
+    names = list(dict.fromkeys(names))
+    if len(names) < 2:
+        names = list(BROADCAST_FALLBACK)
+    if len(names) < size:
+        # Not enough for one full table. Sit them heads-up and up.
+        return [names]
+    tables = [names[i:i + size] for i in range(0, len(names), size)]
+    last = tables[-1]
+    if len(last) < size:
+        used = {n for n in last}
+        extras = [n for n in names if n not in used]
+        last.extend(extras[: size - len(last)])
+    return tables
+
+
+def broadcast_lineup(store=None) -> list[list[str]]:
+    """Tables for every bot the arena knows, plus the built-ins."""
+    names: list[str] = []
+    if store is not None:
+        try:
+            names = [r["bot_id"] for r in store.db.execute(
+                "SELECT bot_id FROM bots ORDER BY bot_id")]
+        except Exception:
+            names = []
+    for name in sorted(BUILTIN):
+        if name not in names:
+            names.append(name)
+    return seat_tables(names)
+
+
+def broadcast_frame(now: float | None = None, table: int = 0, store=None) -> dict:
+    """The action the arena is on at ``now``, for one seated table.
 
     A shoe is ``BROADCAST_HANDS`` hands from a seed derived from the shoe
-    number. When it ends, the next shoe starts. No request can change the
-    lineup, the seed, or the cursor.
+    number. When it ends, the next shoe starts. The lineup comes from who is
+    registered, so another bot opens another table. No request can change the
+    seed or the cursor.
     """
-    table = int(table) % len(BROADCAST_TABLES)
-    names = BROADCAST_TABLES[table]
+    tables = broadcast_lineup(store)
+    table = int(table) % len(tables)
+    names = tables[table]
     now = time.time() if now is None else float(now)
     elapsed = max(0.0, now - BROADCAST_EPOCH)
     step = int(elapsed / BROADCAST_STEP_S)
     shoe, cursor = divmod(step, BROADCAST_SLOT)
-    steps = _shoe_steps(table, shoe)
+    steps = _shoe_steps(names, shoe)
     total = len(steps)
     holding = cursor >= total - 1
     idx = min(cursor, total - 2)
     frame = {
-        "seed": _shoe_seed(table, shoe) % 1_000_000_007,
+        "seed": _shoe_seed(names, shoe) % 1_000_000_007,
         "names": names,
         "hands": BROADCAST_HANDS,
         "cursor": idx,
@@ -280,15 +320,20 @@ def broadcast_frame(now: float | None = None, table: int = 0) -> dict:
         frame["holding"] = True
     frame["broadcast"] = True
     frame["table"] = table
-    frame["tables"] = len(BROADCAST_TABLES)
+    frame["tables"] = len(tables)
     frame["shoe"] = shoe
     frame["step_s"] = BROADCAST_STEP_S
     frame["server_time"] = now
     return frame
 
 
-def _shoe_seed(table: int, shoe: int) -> int:
-    return (table + 1) * 1_000_003 + shoe * 97 + 11
+def _shoe_seed(names: list[str], shoe: int) -> int:
+    # Stable across processes. Python's hash() is salted per start.
+    lineup = ",".join(names)
+    folded = 0
+    for ch in lineup:
+        folded = (folded * 131 + ord(ch)) & 0x7FFFFFFF
+    return folded + shoe * 97 + 11
 
 
 # One replay per (table, shoe). A warm worker answers the next action with a
@@ -298,8 +343,8 @@ _SHOE_CACHE: dict[tuple, list] = {}
 _SHOE_LOCK = threading.Lock()
 
 
-def _shoe_steps(table: int, shoe: int) -> list:
-    key = (table, shoe)
+def _shoe_steps(names: list[str], shoe: int) -> list:
+    key = (tuple(names), shoe)
     hit = _SHOE_CACHE.get(key)
     if hit is not None:
         return hit
@@ -307,8 +352,7 @@ def _shoe_steps(table: int, shoe: int) -> list:
         hit = _SHOE_CACHE.get(key)
         if hit is not None:
             return hit
-        names = BROADCAST_TABLES[table]
-        seed = _shoe_seed(table, shoe) % 1_000_000_007
+        seed = _shoe_seed(names, shoe) % 1_000_000_007
         specs = builtin_specs(names)
         game = Table([s.build() for s in specs], names, seed=seed)
         steps: list[dict] = []
@@ -327,7 +371,7 @@ def live_frame(names: list[str] | None, seed: int, hands: int, cursor: int) -> d
     Stateless on purpose: Vercel functions do not keep a table between requests,
     and the engine is deterministic for a given seed, so replaying is exact.
     """
-    names = list(names or BROADCAST_TABLES[0])
+    names = list(names or broadcast_lineup()[0])
     unknown = [n for n in names if n not in BUILTIN]
     if unknown:
         raise ValueError(f"unknown bot(s): {unknown}. Built-ins: {sorted(BUILTIN)}")
@@ -697,7 +741,7 @@ def make_handler(store: Store):
                 return
             if method == "GET" and path == "/api/live":
                 table = int(qs.get("table", ["0"])[0])
-                self._send(200, broadcast_frame(table=table))
+                self._send(200, broadcast_frame(table=table, store=store))
                 return
             self._send(404, {"error": "not found", "path": path})
 

@@ -193,22 +193,26 @@ function stopBroadcast() {
 
 function showTables(n) {
   const box = $("#table-tabs");
-  if (box.childElementCount === n) {
-    $$("button", box).forEach((b, i) => b.classList.toggle("on", i === live.table));
+  if (Number(box.dataset.count) === n) {
+    if (Number(box.value) !== live.table) box.value = String(live.table);
     return;
   }
+  box.dataset.count = String(n);
   box.innerHTML = "";
   for (let i = 0; i < n; i++) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = "Table " + (i + 1);
-    b.className = i === live.table ? "on" : "";
-    b.addEventListener("click", () => {
-      live.table = i;
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = "Table " + (i + 1);
+    box.appendChild(opt);
+  }
+  box.value = String(Math.min(live.table, n - 1));
+  if (!box.dataset.bound) {
+    box.dataset.bound = "1";
+    box.addEventListener("change", () => {
+      live.table = Number(box.value) || 0;
       live.cursor = -1;
       tune();
     });
-    box.appendChild(b);
   }
 }
 

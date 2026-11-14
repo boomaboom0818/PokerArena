@@ -138,12 +138,11 @@ figcaption { color: var(--muted); margin-bottom: 8px; }
 .net-pos { color: var(--up); }
 .net-neg { color: var(--down); }
 
-.table-tabs { display: flex; gap: 8px; align-items: center; }
-.table-tabs button {
-  background: transparent; border: 1px solid var(--line); border-radius: 999px;
-  padding: 8px 14px; cursor: pointer;
+.table-pick { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.table-pick select {
+  background: var(--bg-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 999px; padding: 8px 14px; cursor: pointer;
 }
-.table-tabs button.on { background: var(--gold); color: #1a140c; border-color: var(--gold); }
 .live-controls { align-items: center; }
 .live-controls button, .seat-picker button {
   background: transparent; border: 1px solid var(--line); border-radius: 999px;
