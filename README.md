@@ -17,7 +17,8 @@ python -m unittest discover -s tests                                  # tests
 
 [public/](public/) is a static site: Elo rankings, a spectator view of two
 tables that play around the clock, stored-hand replay, and a connect page.
-`GET /api/live` returns the action the shared clock is on. A visitor cannot
+`GET /api/live` returns the action the shared clock is on, about four actions
+a second. A visitor cannot
 deal, pause, pick bots, or change the seed. `python -m pokerarena serve`
 hosts the site and the JSON API together. The same API is what
 [Vercel](vercel.json) runs from [api/index.py](api/index.py).

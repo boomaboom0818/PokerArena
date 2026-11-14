@@ -100,6 +100,7 @@ class Table:
         folded = [False] * n
         allin = [False] * n
         events: list[ActionEvent] = []
+        pot = 0
         pos_idx = [(s - button) % n for s in range(n)]
         pos_name = [self.pos_names[p] for p in pos_idx]
 
@@ -112,12 +113,14 @@ class Table:
                 num_active=active, all_in=int(allin[seat]), corrected=corrected, think_ms=think))
 
         def post_blind(seat, amount, kind):
-            pot_before = sum(contrib)
+            nonlocal pot
+            pot_before = pot
             before = stack[seat]
             paid = min(amount, before)
             stack[seat] -= paid
             bet[seat] += paid
             contrib[seat] += paid
+            pot += paid
             if stack[seat] == 0:
                 allin[seat] = True
             log(0, seat, kind, paid, pot_before=pot_before, stack_before=before, active=n)
@@ -135,11 +138,12 @@ class Table:
             return Observation(
                 hand_no=hand_no, seat=seat, n_players=n, button=button, position=pos_name[seat],
                 pos_idx=pos_idx[seat], street=street, hole=hole[seat], board=tuple(board),
-                pot=sum(contrib), to_call=to_call, stack=stack[seat], bet=bet[seat],
+                pot=pot, to_call=to_call, stack=stack[seat], bet=bet[seat],
                 can_raise=can_raise, min_raise_to=min_to, max_raise_to=max_to,
-                small_blind=sb, big_blind=bb, players=views, history=tuple(events))
+                small_blind=sb, big_blind=bb, players=views, history=())
 
         def betting_round(street: int):
+            nonlocal pot
             current_bet = max(bet)
             last_raise = bb
             acted: set[int] = set()
@@ -164,7 +168,7 @@ class Table:
                 max_to = bet[pick] + stack[pick]
                 min_to = min(current_bet + last_raise, max_to)
                 can_raise = pick not in acted and stack[pick] > to_call and others_can_act
-                pot_before = sum(contrib)
+                pot_before = pot
                 active = sum(1 for s in range(n) if not folded[s])
                 stack_before = stack[pick]
 
@@ -218,6 +222,7 @@ class Table:
                 stack[pick] -= chips
                 bet[pick] += chips
                 contrib[pick] += chips
+                pot += chips
                 if stack[pick] == 0 and chips > 0:
                     allin[pick] = True
                 if label == "fold":
@@ -285,4 +290,4 @@ class Table:
             self._safe(s, bot.on_hand_end, summary)
 
         return HandResult(hand_no=hand_no, button=button, board=list(board), events=events,
-                          seats=seats, pot_total=sum(contrib), showdown=showdown)
+                          seats=seats, pot_total=pot, showdown=showdown)

@@ -239,7 +239,7 @@ class MyBot(Bot):
 # One shared clock. A visitor never picks a seed, a cursor, or who sits.
 # The same UTC second shows the same action to everyone, and the shoe rolls on.
 BROADCAST_EPOCH = 1794528000  # 2026-11-13 00:00:00 UTC
-BROADCAST_STEP_S = 1.4
+BROADCAST_STEP_S = 0.22
 # Every shoe occupies the same number of steps, so the clock is a division,
 # not a walk back to the epoch. A short shoe holds its last action until the slot ends.
 BROADCAST_SLOT = 400
@@ -263,10 +263,20 @@ def broadcast_frame(now: float | None = None, table: int = 0) -> dict:
     elapsed = max(0.0, now - BROADCAST_EPOCH)
     step = int(elapsed / BROADCAST_STEP_S)
     shoe, cursor = divmod(step, BROADCAST_SLOT)
-    frame = live_frame(names, _shoe_seed(table, shoe), BROADCAST_HANDS, cursor)
-    if frame["done"]:
-        # The hand finished inside this slot. Hold the last action until the next shoe.
-        frame = live_frame(names, _shoe_seed(table, shoe), BROADCAST_HANDS, frame["total"] - 2)
+    steps = _shoe_steps(table, shoe)
+    total = len(steps)
+    holding = cursor >= total - 1
+    idx = min(cursor, total - 2)
+    frame = {
+        "seed": _shoe_seed(table, shoe) % 1_000_000_007,
+        "names": names,
+        "hands": BROADCAST_HANDS,
+        "cursor": idx,
+        "total": total,
+        "done": False,
+        "frame": steps[idx],
+    }
+    if holding:
         frame["holding"] = True
     frame["broadcast"] = True
     frame["table"] = table
@@ -279,6 +289,36 @@ def broadcast_frame(now: float | None = None, table: int = 0) -> dict:
 
 def _shoe_seed(table: int, shoe: int) -> int:
     return (table + 1) * 1_000_003 + shoe * 97 + 11
+
+
+# One replay per (table, shoe). A warm worker answers the next action with a
+# lookup instead of playing the shoe again. Vercel reuses the process between
+# requests; a cold start still pays for one shoe, then holds it.
+_SHOE_CACHE: dict[tuple, list] = {}
+_SHOE_LOCK = threading.Lock()
+
+
+def _shoe_steps(table: int, shoe: int) -> list:
+    key = (table, shoe)
+    hit = _SHOE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    with _SHOE_LOCK:
+        hit = _SHOE_CACHE.get(key)
+        if hit is not None:
+            return hit
+        names = BROADCAST_TABLES[table]
+        seed = _shoe_seed(table, shoe) % 1_000_000_007
+        specs = builtin_specs(names)
+        game = Table([s.build() for s in specs], names, seed=seed)
+        steps: list[dict] = []
+        for hand_no in range(BROADCAST_HANDS):
+            steps.extend(_stream_hand(game, hand_no))
+        steps.append({"type": "session_end"})
+        if len(_SHOE_CACHE) > 8:
+            _SHOE_CACHE.clear()
+        _SHOE_CACHE[key] = steps
+        return steps
 
 
 def live_frame(names: list[str] | None, seed: int, hands: int, cursor: int) -> dict:
@@ -337,19 +377,20 @@ def _stream_hand(table: Table, hand_no: int):
     stack = [table.stack0] * n
     bet = [0] * n
     contrib = [0] * n
+    pot = 0
     folded = [False] * n
     allin = [False] * n
     pos_idx = [(s - button) % n for s in range(n)]
     pos_name = [table.pos_names[p] for p in pos_idx]
 
-    def snap(phase, *, actor=None, last=None, pot=None, reveal=False):
+    def snap(phase, *, actor=None, last=None, pot_now=None, reveal=False):
         return {
             "type": "table",
             "phase": phase,
             "hand_no": hand_no,
             "button": button,
             "board": [card_str(c) for c in board],
-            "pot": pot if pot is not None else sum(contrib),
+            "pot": pot if pot_now is None else pot_now,
             "actor": actor,
             "last": last,
             "showdown": reveal and len([s for s in range(n) if not folded[s]]) > 1,
@@ -370,11 +411,13 @@ def _stream_hand(table: Table, hand_no: int):
         }
 
     def post(seat, amount, kind):
-        pot_before = sum(contrib)
+        nonlocal pot
+        pot_before = pot
         paid = min(amount, stack[seat])
         stack[seat] -= paid
         bet[seat] += paid
         contrib[seat] += paid
+        pot += paid
         if stack[seat] == 0:
             allin[seat] = True
         return {"seat": seat, "bot": table.names[seat], "kind": kind, "amount": paid, "pot_before": pot_before}
@@ -384,13 +427,14 @@ def _stream_hand(table: Table, hand_no: int):
     else:
         sb_seat, bb_seat = (button + 1) % n, (button + 2) % n
 
-    yield snap("deal", pot=0)
+    yield snap("deal", pot_now=0)
     last = post(sb_seat, sb, "sb")
     yield snap("blind", last=last)
     last = post(bb_seat, bb, "bb")
     yield snap("blind", last=last)
 
     def betting(street: int):
+        nonlocal pot
         current_bet = max(bet)
         last_raise = bb
         acted: set[int] = set()
@@ -424,7 +468,7 @@ def _stream_hand(table: Table, hand_no: int):
             obs = Observation(
                 hand_no=hand_no, seat=pick, n_players=n, button=button, position=pos_name[pick],
                 pos_idx=pos_idx[pick], street=street, hole=hole[pick], board=tuple(board),
-                pot=sum(contrib), to_call=to_call, stack=stack[pick], bet=bet[pick],
+                pot=pot, to_call=to_call, stack=stack[pick], bet=bet[pick],
                 can_raise=can_raise, min_raise_to=min_to, max_raise_to=max_to,
                 small_blind=sb, big_blind=bb, players=views, history=())
             corrected = 0
@@ -468,6 +512,7 @@ def _stream_hand(table: Table, hand_no: int):
             stack[pick] -= chips
             bet[pick] += chips
             contrib[pick] += chips
+            pot += chips
             if stack[pick] == 0 and chips > 0:
                 allin[pick] = True
             if label == "fold":
@@ -537,7 +582,7 @@ def _stream_hand(table: Table, hand_no: int):
         "hand_no": hand_no,
         "button": button,
         "board": [card_str(c) for c in board],
-        "pot": sum(contrib),
+        "pot": pot,
         "actor": None,
         "last": {"kind": "result", "showdown": showdown},
         "showdown": showdown,

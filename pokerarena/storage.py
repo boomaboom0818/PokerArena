@@ -170,6 +170,8 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
+        self.db.execute("PRAGMA temp_store=MEMORY")
+        self.db.execute("PRAGMA cache_size=-65536")
         self.db.executescript(SCHEMA)
         self.db.commit()
 
