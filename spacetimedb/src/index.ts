@@ -16,6 +16,7 @@ const bot = table({ name: 'bot', public: true }, {
   matches: t.u32(),
   hands: t.u32(),
   chips: t.i64(),
+  source: t.string(),
 });
 
 const tableState = table({ name: 'table_state', public: true }, {
@@ -141,7 +142,27 @@ type Seat = {
   net: number;
 };
 
-function decide(name: string, hole: number[], board: number[], toCall: number, stack: number, rnd: () => number): string {
+const BUILTIN_SOURCE = 'builtin';
+
+function runUser(source: string, obs: Record<string, unknown>): string {
+  if (!source || source === BUILTIN_SOURCE) return '';
+  const fn = new Function('obs', `"use strict";\n${source}\n; return typeof act === "function" ? act(obs) : "fold";`);
+  const out = fn(obs);
+  return typeof out === 'string' ? out : 'fold';
+}
+
+function decide(name: string, hole: number[], board: number[], toCall: number, stack: number, rnd: () => number, source: string): string {
+  if (source && source !== BUILTIN_SOURCE) {
+    try {
+      const choice = runUser(source, {
+        hole: hole.map(cardStr), board: board.map(cardStr), toCall, stack,
+        pot: 0, bigBlind: BB, canCheck: toCall === 0, canRaise: stack > toCall,
+      });
+      if (choice === 'raise' || choice === 'call' || choice === 'check' || choice === 'fold') return choice;
+    } catch {
+      return 'fold';
+    }
+  }
   const ranks = hole.map(c => c >> 2).sort((a, b) => b - a);
   const suited = (hole[0] & 3) === (hole[1] & 3);
   const pair = ranks[0] === ranks[1];
@@ -164,7 +185,7 @@ function decide(name: string, hole: number[], board: number[], toCall: number, s
   return toCall === 0 ? 'check' : 'fold';
 }
 
-function playHand(names: string[], handNo: number, seed: number): { seats: Seat[]; board: string; pot: number; log: string } {
+function playHand(names: string[], handNo: number, seed: number, sources: Record<string, string>): { seats: Seat[]; board: string; pot: number; log: string } {
   const rnd = mulberry32((seed + handNo * 97) >>> 0);
   const deck = [...Array(52).keys()];
   shuffle(deck, rnd);
@@ -203,7 +224,7 @@ function playHand(names: string[], handNo: number, seed: number): { seats: Seat[
       }
       if (pick < 0) break;
       const toCall = current - seats[pick].bet;
-      const choice = decide(seats[pick].name, seats[pick].hole, board, toCall, seats[pick].stack, rnd);
+      const choice = decide(seats[pick].name, seats[pick].hole, board, toCall, seats[pick].stack, rnd, sources[seats[pick].name] || '');
       if (choice === 'fold' || (choice === 'check' && toCall > 0)) {
         seats[pick].folded = true;
         logs.push(`${seats[pick].name} folds`);
@@ -293,15 +314,25 @@ function rate(ctx: Ctx, names: string[], nets: number[]): void {
   });
 }
 
+function field(ctx: Ctx): { names: string[]; sources: Record<string, string> } {
+  const rows = [...ctx.db.bot.iter()];
+  const users = rows.filter(r => r.source && r.source !== BUILTIN_SOURCE).map(r => r.name).sort();
+  const names = [...NAMES, ...users];
+  const sources: Record<string, string> = {};
+  for (const row of rows) sources[row.name] = row.source;
+  return { names, sources };
+}
+
 function playMatch(ctx: Ctx): void {
   const seed = Number(ctx.timestamp.microsSinceUnixEpoch % 1_000_000_007n);
-  const nets = NAMES.map(() => 0);
-  let last = playHand(NAMES, 0, seed);
+  const { names, sources } = field(ctx);
+  const nets = names.map(() => 0);
+  let last = playHand(names, 0, seed, sources);
   for (let hand = 0; hand < MATCH_HANDS; hand++) {
-    last = playHand(NAMES, hand, seed);
+    last = playHand(names, hand, seed, sources);
     last.seats.forEach((s, i) => { nets[i] += s.net; });
   }
-  rate(ctx, NAMES, nets);
+  rate(ctx, names, nets);
   const seats = last.seats.map(s => ({
     bot: s.name,
     stack: s.stack,
@@ -314,7 +345,7 @@ function playMatch(ctx: Ctx): void {
   const existing = ctx.db.tableState.tableId.find(0);
   const row = {
     tableId: 0,
-    names: NAMES.join(','),
+    names: names.join(','),
     handNo: MATCH_HANDS,
     phase: 'result',
     board: last.board,
@@ -330,11 +361,29 @@ function playMatch(ctx: Ctx): void {
 
 export const init = spacetimedb.init(ctx => {
   for (const name of NAMES) {
-    ctx.db.bot.insert({ name, elo: 1500, matches: 0, hands: 0, chips: 0n });
+    ctx.db.bot.insert({ name, elo: 1500, matches: 0, hands: 0, chips: 0n, source: BUILTIN_SOURCE });
   }
   ctx.db.tickTimer.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.interval(2_000_000n) });
   playMatch(ctx);
 });
+
+export const connectBot = spacetimedb.reducer(
+  { name: t.string(), source: t.string() },
+  (ctx, { name, source }) => {
+    const safe = name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24);
+    if (!safe || NAMES.includes(safe)) throw new Error('pick another name');
+    if (source.length < 8 || source.length > 8000) throw new Error('paste a short act(obs) function');
+    if (!/function\s+act\s*\(/.test(source) && !/act\s*=\s*\(/.test(source)) {
+      throw new Error('the code needs a function named act');
+    }
+    const existing = ctx.db.bot.name.find(safe);
+    if (existing) {
+      ctx.db.bot.name.update({ ...existing, source });
+      return;
+    }
+    ctx.db.bot.insert({ name: safe, elo: 1500, matches: 0, hands: 0, chips: 0n, source });
+  }
+);
 
 export const tick = spacetimedb.reducer(
   { onSchedule: tickTimer },

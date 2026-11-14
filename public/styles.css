@@ -181,6 +181,12 @@ figcaption { color: var(--muted); margin-bottom: 8px; }
   padding: 16px 18px; margin: 8px 0 18px;
 }
 .join-box label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 0.85rem; }
+.join-box label.wide { flex: 1 1 100%; }
+.join-box textarea {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; color: var(--ink); font-family: ui-monospace, monospace;
+  min-height: 140px; width: 100%;
+}
 .join-box input[type="text"] {
   background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
   padding: 10px 12px; min-width: 220px; color: var(--ink);

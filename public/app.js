@@ -529,27 +529,19 @@ async function loadConnect() {
       $("#bot-name").value = name;
       refreshJoin();
       const status = $("#join-status");
-      status.textContent = "Preparing the file…";
+      status.textContent = "Sitting " + name + "…";
       try {
-        const res = await fetch(API + "/api/connect/starter?name=" + encodeURIComponent(name));
-        if (!res.ok) throw new Error("could not build the starter");
-        const kind = res.headers.get("content-type") || "";
-        let blob = null;
-        let filename = name + ".py";
-        if (kind.includes("json")) {
-          const data = await res.json();
-          blob = new Blob([data.source || ""], { type: "text/x-python" });
-          filename = (data.filename || name).replace(/[^\w.-]+/g, "_") + ".py";
-        } else {
-          blob = await res.blob();
+        const res = await fetch("https://maincloud.spacetimedb.com/v1/database/poker-arena/call/connect_bot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify([name, $("#bot-source").value]),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text.slice(0, 180) || "the table refused the bot");
         }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        status.textContent = "Downloaded " + name + ".py. Put it in the PokerArena folder, then run the command below.";
+        status.textContent = name + " is in. The next match seats them. Scroll up to watch.";
+        refreshLeaderboard();
       } catch (err) {
         status.textContent = err.message;
       }

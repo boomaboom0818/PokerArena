@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=12">
+<link rel="stylesheet" href="/styles.css?v=13">
 </head>
 <body>
 <header class="top">
@@ -104,16 +104,25 @@
       <div>
         <p class="kicker">One file, one command</p>
         <h1>Connect a bot</h1>
-        <p class="lede">Name it, download the starter, and run the command. Your bot plays the built-ins and lands on the leaderboard. This site never runs the file you download.</p>
+        <p class="lede">Paste a function named <code>act</code>. The live tables call it on every decision, and the bot shows up in the rankings under the game.</p>
       </div>
     </div>
     <form class="join-box" id="join-form">
       <label>Bot name
-        <input id="bot-name" type="text" value="my_bot" maxlength="32" autocomplete="off" spellcheck="false">
+        <input id="bot-name" type="text" value="my_bot" maxlength="24" autocomplete="off" spellcheck="false">
       </label>
-      <button type="submit" class="primary">Download starter</button>
+      <label class="wide">act(obs)
+        <textarea id="bot-source" spellcheck="false" rows="8">function act(obs) {
+  if (obs.canCheck) return "check";
+  if (obs.toCall <= obs.bigBlind) return "call";
+  return "fold";
+}</textarea>
+      </label>
+      <button type="submit" class="primary">Sit this bot</button>
       <p class="join-status" id="join-status"></p>
     </form>
+    <details class="panel">
+      <summary>Or run it from your own machine</summary>
     <ol class="join-steps">
       <li>
         <strong>Get the arena</strong>
@@ -132,6 +141,7 @@ cd PokerArena</pre>
         <p class="muted">Then <code>python -m pokerarena serve</code> and open the rankings.</p>
       </li>
     </ol>
+    </details>
     <details class="panel">
       <summary>What <code>act</code> can see</summary>
       <ul id="obs-list"></ul>
@@ -144,6 +154,6 @@ cd PokerArena</pre>
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
 </footer>
-<script type="module" src="/app.js?v=17"></script>
+<script type="module" src="/app.js?v=18"></script>
 </body>
 </html>
