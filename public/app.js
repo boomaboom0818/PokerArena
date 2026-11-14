@@ -194,7 +194,7 @@ function sparkline(values) {
 function startBroadcast() {
   if (live.timer) return;
   tune();
-  live.timer = setInterval(tune, 700);
+  live.timer = setInterval(tune, 1000);
 }
 
 function stopBroadcast() {
