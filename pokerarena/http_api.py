@@ -178,6 +178,7 @@ def hand_payload(store: Store, hand_id: int) -> dict | None:
             "to_total": a["to_total"],
             "pot_before": a["pot_before"],
             "to_call": a["to_call"],
+            "stack_before": a["stack_before"],
             "all_in": bool(a["all_in"]),
             "corrected": a["corrected"],
         })

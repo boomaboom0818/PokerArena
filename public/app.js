@@ -16,6 +16,7 @@ let sortKey = "elo";
 let sortDir = -1;
 let selectedBot = null;
 let live = { table: 0, cursor: -1, timer: null };
+let replay = { frames: [], index: 0, timer: null, id: null };
 const showHoles = true;
 
 function api(path, opts) {
@@ -52,6 +53,7 @@ function route() {
   if (name === "connect" && !$("#bot-sample").textContent) loadConnect();
   if (name === "live") startBroadcast();
   else stopBroadcast();
+  if (name !== "hands") stopReplay();
 }
 
 function emptyFrame() {
@@ -340,36 +342,163 @@ async function loadHands(bot) {
   }
 }
 
+function stopReplay() {
+  clearInterval(replay.timer);
+  replay.timer = null;
+  const play = $("#replay-play");
+  if (play) play.classList.remove("on");
+}
+
+function handFrames(data) {
+  const players = data.players.slice().sort((a, b) => a.seat - b.seat);
+  const seats = players.map((p) => ({
+    seat: p.seat,
+    bot: p.bot,
+    position: p.position,
+    stack: p.stack,
+    bet: 0,
+    folded: false,
+    all_in: false,
+    hole: p.hole,
+    is_button: p.seat === data.button,
+  }));
+  const bySeat = Object.fromEntries(seats.map((s) => [s.seat, s]));
+  const frames = [{
+    phase: "deal",
+    board: [],
+    pot: 0,
+    actor: null,
+    last: null,
+    seats: seats.map((s) => ({ ...s })),
+  }];
+  let pot = 0;
+  for (const a of data.actions) {
+    const seat = bySeat[a.seat];
+    if (!seat) continue;
+    if (a.street > 0 && frames[frames.length - 1].board.length < [0, 3, 4, 5][a.street]) {
+      for (const s of seats) s.bet = 0;
+      frames.push({
+        phase: "board",
+        board: data.board.slice(0, [0, 3, 4, 5][a.street]),
+        pot,
+        actor: null,
+        last: null,
+        seats: seats.map((s) => ({ ...s })),
+      });
+    }
+    const paid = a.amount || 0;
+    if (a.stack_before != null) seat.stack = a.stack_before - paid;
+    else seat.stack = Math.max(0, seat.stack - paid);
+    seat.bet = a.to_total || 0;
+    seat.all_in = !!a.all_in;
+    if (a.kind === "fold") seat.folded = true;
+    pot = (a.pot_before || 0) + paid;
+    frames.push({
+      phase: a.street_name,
+      board: data.board.slice(0, [0, 3, 4, 5][a.street] || 0),
+      pot,
+      actor: a.seat,
+      last: a,
+      seats: seats.map((s) => ({ ...s })),
+    });
+  }
+  frames.push({
+    phase: "result",
+    board: data.board,
+    pot: data.pot,
+    actor: null,
+    last: { kind: "result" },
+    seats: players.map((p) => ({
+      seat: p.seat, bot: p.bot, position: p.position, stack: p.final_stack,
+      bet: 0, folded: p.folded_street >= 0, hole: p.hole, net: p.net,
+      is_button: p.seat === data.button, category: p.category,
+    })),
+  });
+  return frames;
+}
+
+function showReplay(index) {
+  if (!replay.frames.length) return;
+  replay.index = Math.max(0, Math.min(index, replay.frames.length - 1));
+  const frame = replay.frames[replay.index];
+  renderFelt($("#replay-felt"), frame);
+  $("#replay-log").textContent = describe(frame);
+  const scrub = $("#replay-scrub");
+  scrub.max = String(replay.frames.length - 1);
+  scrub.value = String(replay.index);
+  $$("#replay-script .script-line").forEach((line) => {
+    line.classList.toggle("on", Number(line.dataset.step) === replay.index);
+  });
+  const on = $("#replay-script .script-line.on");
+  if (on) on.scrollIntoView({ block: "nearest" });
+}
+
+function playReplay() {
+  if (replay.timer) {
+    stopReplay();
+    return;
+  }
+  if (replay.index >= replay.frames.length - 1) replay.index = 0;
+  $("#replay-play").classList.add("on");
+  $("#replay-play").textContent = "Pause";
+  replay.timer = setInterval(() => {
+    if (replay.index >= replay.frames.length - 1) {
+      stopReplay();
+      $("#replay-play").textContent = "Play";
+      return;
+    }
+    showReplay(replay.index + 1);
+  }, 700);
+}
+
+function bindReplay() {
+  const play = $("#replay-play");
+  if (play.dataset.bound) return;
+  play.dataset.bound = "1";
+  play.addEventListener("click", () => {
+    playReplay();
+    if (!replay.timer) play.textContent = "Play";
+  });
+  $("#replay-prev").addEventListener("click", () => { stopReplay(); $("#replay-play").textContent = "Play"; showReplay(replay.index - 1); });
+  $("#replay-next").addEventListener("click", () => { stopReplay(); $("#replay-play").textContent = "Play"; showReplay(replay.index + 1); });
+  $("#replay-scrub").addEventListener("input", (ev) => {
+    stopReplay();
+    $("#replay-play").textContent = "Play";
+    showReplay(Number(ev.target.value));
+  });
+}
+
 async function openHand(id) {
+  bindReplay();
+  stopReplay();
   const data = await api("/api/hands/" + id);
+  replay.frames = handFrames(data);
+  replay.index = 0;
+  replay.id = id;
   const script = $("#replay-script");
   let street = -1;
   const lines = [`<h2>Hand #${data.hand_id}</h2>`];
-  data.actions.forEach((a) => {
+  data.actions.forEach((a, i) => {
     if (a.street !== street) {
       street = a.street;
       const shown = data.board.slice(0, [0, 3, 4, 5][a.street]).join(" ");
       lines.push(`<div class="street">${a.street_name.toUpperCase()} ${shown}</div>`);
     }
     const amt = a.kind === "raise" || a.kind === "bet" ? " " + a.to_total : (a.amount ? " " + a.amount : "");
-    lines.push(`<div class="script-line">${a.bot} ${a.kind}${amt}${a.all_in ? " (all-in)" : ""}</div>`);
+    lines.push(`<button type="button" class="script-line" data-step="${i + 1}">${a.bot} ${a.kind}${amt}${a.all_in ? " (all-in)" : ""}</button>`);
   });
-  lines.push(`<div class="street">RESULT</div>`);
-  data.players.forEach((p) => {
-    lines.push(`<div class="script-line">${p.bot} [${p.hole.join(" ")}] <span class="${p.net >= 0 ? "up" : "down"}">${money(p.net)}</span>${p.category ? " · " + p.category : ""}</div>`);
-  });
+  lines.push(`<button type="button" class="script-line" data-step="${replay.frames.length - 1}">Showdown</button>`);
   script.innerHTML = lines.join("");
-  renderFelt($("#replay-felt"), {
-    phase: "result",
-    board: data.board,
-    pot: data.pot,
-    actor: null,
-    seats: data.players.map((p) => ({
-      seat: p.seat, bot: p.bot, position: p.position, stack: p.final_stack,
-      bet: 0, folded: p.folded_street >= 0, hole: p.hole, net: p.net,
-      is_button: p.seat === data.button, category: p.category,
-    })),
+  $$(".script-line", script).forEach((line) => {
+    line.addEventListener("click", () => {
+      stopReplay();
+      $("#replay-play").textContent = "Play";
+      showReplay(Number(line.dataset.step));
+    });
   });
+  $("#replay-play").textContent = "Play";
+  showReplay(0);
+  playReplay();
 }
 
 async function loadConnect() {
