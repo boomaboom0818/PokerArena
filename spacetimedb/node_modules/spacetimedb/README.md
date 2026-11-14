@@ -1,0 +1,323 @@
+## SpacetimeDB Module Library and SDK
+
+### Overview
+
+This repository contains both the SpacetimeDB module library and the TypeScript SDK for SpacetimeDB. The SDK allows you to interact with the database server from a client and applies type information from your SpacetimeDB server module.
+
+### Installation
+
+The SDK is an NPM package, thus you can use your package manager of choice like NPM or Yarn, for example:
+
+```
+npm add spacetimedb
+```
+
+You can use the package in the browser, using a bundler like vite/parcel/rsbuild, in server-side applications like NodeJS, Deno, Bun, NextJS, Remix, and in Cloudflare Workers.
+
+> Use a recent version of Node.js 22, 24, or 26 or later.
+
+### Usage
+
+In order to connect to a database you have to generate module bindings for your database.
+
+```ts
+import { DbConnection, tables } from './module_bindings';
+
+const connection = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withDatabaseName('MODULE_NAME')
+  .withAutomaticReconnect()
+  .onConnect((_connection, identity) => {
+    console.log('Connected:', identity.toHexString());
+  })
+  .onAutomaticReconnect((_connection, identity) => {
+    console.log('Reconnected:', identity.toHexString());
+  })
+  .onDisconnect((_ctx, error, attempt, delayMs) => {
+    console.log(
+      attempt === undefined
+        ? 'Disconnected'
+        : `Retry ${attempt} in ${delayMs} ms`,
+      error
+    );
+  })
+  .onConnectError((_ctx, error, attempt) => {
+    console.error(
+      attempt === undefined ? 'Connection failed' : 'Retry failed',
+      error
+    );
+  })
+  .withToken('TOKEN')
+  .build();
+
+connection.subscriptionBuilder().subscribe(tables.player);
+```
+
+If you need to disconnect the client:
+
+```ts
+connection.disconnect();
+```
+
+Automatic reconnection preserves the connection, cache, handles, and callbacks. Register subscriptions and row callbacks once after `build()` or inside `onConnect`, which fires once per connection object. Successful automatic reconnects fire `onAutomaticReconnect(connection, identity, token)` instead. This callback runs before subscription replay; wait for subscription `onApplied` callbacks when you need refreshed data. Cache reads remain available during outages. Initial connection failures are not retried by the core SDK.
+
+For expiring credentials, pass the initial token with `withToken` and add `withTokenProvider(() => auth.getAccessToken())`. The SDK asks for a fresh token before reconnecting when the retained token is near expiry. The provider must return a token for the same identity. If your application persists tokens, save the token from both `onConnect` and `onAutomaticReconnect` to include refreshed credentials.
+
+Typically, you will use the SDK with types generated from SpacetimeDB module. For example, given a table named `Player` you can subscribe to player updates like this:
+
+```ts
+connection.db.player.onInsert((ctx, player) => {
+  console.log(player);
+});
+```
+
+Given a reducer called `CreatePlayer` you can call it using a call method:
+
+```ts
+connection.reducers.createPlayer();
+```
+
+#### React Usage
+
+This module also includes React hooks to subscribe to tables under the `spacetimedb/react` subpath. The React integration is fully compatible with React StrictMode and handles the double-mount behavior correctly (only one WebSocket connection is created).
+
+In order to use SpacetimeDB React hooks in your project, first add a `SpacetimeDBProvider` at the top of your component hierarchy:
+
+```tsx
+const connectionBuilder = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withDatabaseName('MODULE_NAME')
+  .withLightMode(true)
+  .onDisconnect(() => {
+    console.log('disconnected');
+  })
+  .onConnectError(() => {
+    console.log('client_error');
+  })
+  .onConnect((conn, identity, _token) => {
+    console.log(
+      'Connected to SpacetimeDB with identity:',
+      identity.toHexString()
+    );
+
+    conn.subscriptionBuilder().subscribe(tables.player);
+  })
+  .withToken('TOKEN');
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+      <App />
+    </SpacetimeDBProvider>
+  </React.StrictMode>
+);
+```
+
+One you add a `SpacetimeDBProvider` to your hierarchy, you can use SpacetimeDB React hooks in your render function:
+
+```tsx
+function App() {
+  const conn = useSpacetimeDB<DbConnection>();
+  const { rows: messages } = useTable<DbConnection, Message>('message');
+
+  ...
+}
+```
+
+#### SolidJS Usage
+
+This module also includes SolidJS primitives to subscribe to tables under the `spacetimedb/solid` subpath. The SolidJS integration uses Solid's fine-grained reactivity system (`createSignal`, `createStore`, `createMemo`, `createComputed`) for optimal rendering performance. Reactive updates are scoped to only the data that actually changed.
+
+In order to use SpacetimeDB SolidJS primitives in your project, first add a `SpacetimeDBProvider` at the top of your component hierarchy:
+
+```tsx
+import { SpacetimeDBProvider } from 'spacetimedb/solid';
+import { DbConnection, tables } from './module_bindings';
+
+const connectionBuilder = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withDatabaseName('MODULE_NAME')
+  .withLightMode(true)
+  .onDisconnect(() => {
+    console.log('disconnected');
+  })
+  .onConnectError(() => {
+    console.log('client_error');
+  })
+  .onConnect((conn, identity, _token) => {
+    console.log(
+      'Connected to SpacetimeDB with identity:',
+      identity.toHexString()
+    );
+
+    conn.subscriptionBuilder().subscribe(tables.player);
+  })
+  .withToken('TOKEN');
+
+render(
+  () => (
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+      <App />
+    </SpacetimeDBProvider>
+  ),
+  document.getElementById('root')!
+);
+```
+
+Once you add a `SpacetimeDBProvider` to your hierarchy, you can use the SpacetimeDB SolidJS primitives in your components:
+
+```tsx
+import {
+  useSpacetimeDB,
+  useTable,
+  useReducer,
+  useProcedure,
+} from 'spacetimedb/solid';
+
+function App() {
+  // Access the connection state (identity, token, connection error, etc.)
+  const conn = useSpacetimeDB();
+
+  // Subscribe to a table — returns a reactive store of rows and an isReady accessor
+  const [rows, isReady] = useTable(() => tables.message);
+
+  // Subscribe to a filtered view
+  const [onlineUsers, onlineReady] = useTable(
+    () => tables.user.where(r => r.online.eq(true)),
+    {
+      onInsert: row => console.log('User came online:', row),
+      onDelete: row => console.log('User went offline:', row),
+    }
+  );
+
+  // Call a reducer — queues calls made before the connection is ready
+  const sendMessage = useReducer(reducers.sendMessage);
+
+  // Call a procedure — queues calls made before the connection is ready
+  const getResult = useProcedure(procedures.getSomeResult);
+
+  return (
+    <div>
+      <Show when={isReady()} fallback={<p>Loading...</p>}>
+        <p>{rows.length} messages</p>
+        <For each={rows}>{row => <div>{row.text}</div>}</For>
+      </Show>
+      <button onClick={() => sendMessage('hello')}>Send</button>
+    </div>
+  );
+}
+```
+
+**Key differences from the React API:**
+
+- `useTable` takes a _getter function_ `() => Query<TableDef>` instead of a plain value, so the query can be reactive and update when signals change.
+- `useTable` returns `[rows, isReady]` where `rows` is a Solid reactive store and `isReady` is an accessor function `() => boolean`.
+- The `enabled` callback option is a getter `() => boolean` instead of a plain boolean, allowing it to depend on reactive state.
+- `useReducer` and `useProcedure` queue calls made before the connection is ready and flush them once connected.
+
+### Developer notes
+
+To run the tests, do:
+
+```sh
+pnpm build && pnpm test
+```
+
+### Declared environment
+
+Pass the complete environment schema to `schema`. Values are supplied at publish
+time, not embedded in the module:
+
+```ts
+const db = schema(tables, {
+  env: {
+    API_URL: t.string(),
+    MODE: t.enum('Mode', ['prod', 'dev']),
+    LOG_LEVEL: t.enum('LogLevel', ['info', 'debug']).optional(),
+  },
+});
+```
+
+`ctx.env.MODE` has type `'prod' | 'dev'`; `ctx.env.LOG_LEVEL` also permits
+`undefined`. Simple enum cases mean allowed strings only in this declaration;
+ordinary enum values elsewhere retain their tagged representation. Payload enums
+are rejected. The checked `ctx.env.get('LOG_LEVEL')` returns `null` for an omitted
+optional value. A declared key named `get` remains accessible through the generic
+method. Omitted or empty schemas allow no keys. Undeclared reads and reads entered
+by the host in a submodule fail at runtime; ordinary helpers retain their caller's
+scope. Values are private, durable database configuration for secrets and other settings.
+Database owners and authorized collaborators can read them; module code can expose
+them through its own outputs.
+
+### Inter-database communication
+
+Generate receiver bindings with `spacetime generate --bindings module --lang typescript`,
+or declare dependencies in `spacetime.json` and run `spacetime generate <sender>`.
+Dependency bindings are written to `src/remote_bindings/<dependency>/index.ts` by
+default. Import them as source modules; no receiver package dependency is needed.
+Receiver generation currently covers root-module reducers only.
+
+```ts
+import { schema, table, t } from 'spacetimedb/server';
+import gw from './remote_bindings/game_world';
+
+const pingOutbox = table(
+  { outbox: { receiver: gw.reducers.receivePing } },
+  {
+    msgId: t.u64().primaryKey().autoInc(),
+    target: gw.identity().target(),
+    note: t.string(),
+  }
+);
+// Alternatively: const pingOutbox = gw.outbox.receivePing();
+// Like table(), it takes an optional name; the schema key defines the accessor.
+const db = schema({ pingOutbox });
+export default db;
+
+export const ping = db.reducer(
+  { to: gw.identity(), note: t.string() },
+  (ctx, { to, note }) => {
+    ctx.db.pingOutbox.insert({ msgId: 0n, target: to, note });
+  }
+);
+
+export const onPingResult = db.reducer(
+  { onResult: pingOutbox },
+  { row: pingOutbox.rowType, result: t.result(t.unit(), t.string()) },
+  (_ctx, { row, result }) => {
+    if ('err' in result)
+      console.warn(`Ping to ${row.target} failed: ${result.err}`);
+  }
+);
+```
+
+Outboxes require one auto-incrementing `u64` primary key and one identity column
+marked `.target()`. Receiver parameters map to columns by name, independently of
+column order. Outboxes expose inserts and reads; updates, deletes, and `clear`
+are unavailable. A result callback accepts the outbox row followed by
+`Result<Unit, String>`. The host commits successful callback changes atomically
+with outbox cleanup.
+
+The shorthand reserves `msgId` and `target` for its metadata columns. If the
+receiver has a parameter with either name, declare the outbox with `table()`
+and use different metadata column names, such as `deliveryId` and `destination`.
+
+A `gw.identity()` type records which module your code means to send to. Nothing
+checks it against the database it names, and any caller can pass any identity
+as a reducer argument. To reply to a calling database, look `ctx.sender` up in a
+table of databases you trust and send to the stored identity. Index lookups
+accept a plain `Identity`, while rows keep the receiver's type, so inserting
+`ctx.sender` as a target does not compile.
+
+```ts
+import { SenderError } from 'spacetimedb/server';
+
+// Register it with the outbox: schema({ pingOutbox, trustedWorld }).
+const trustedWorld = table({}, { world: gw.identity().primaryKey() });
+
+export const pingBack = db.reducer({ note: t.string() }, (ctx, { note }) => {
+  const caller = ctx.db.trustedWorld.world.find(ctx.sender);
+  if (!caller) throw new SenderError('Unknown caller');
+  ctx.db.pingOutbox.insert({ msgId: 0n, target: caller.world, note });
+});
+```

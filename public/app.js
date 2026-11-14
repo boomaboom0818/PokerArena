@@ -1,3 +1,5 @@
+import { leaderboard as stdbBoard, liveTable } from "./stdb.js";
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -68,8 +70,8 @@ async function boot() {
   requestAnimationFrame(() => window.scrollTo(0, 0));
   window.addEventListener("hashchange", route);
   try {
-    await api("/api/health");
-    $("#api-pill").textContent = "API live";
+    await liveTable();
+    $("#api-pill").textContent = "tables live";
     $("#api-pill").className = "api-pill ok";
   } catch (err) {
     $("#api-pill").textContent = "API offline";
@@ -97,7 +99,7 @@ function bindRankings() {
 async function refreshLeaderboard() {
   const min = $("#min-hands").checked ? 100 : 0;
   try {
-    const data = await api("/api/leaderboard?min_hands=" + min);
+    const data = await stdbBoard();
     leaderboard = data.bots || [];
   } catch (err) {
     leaderboard = [];
@@ -223,14 +225,14 @@ async function tune() {
   if (live.busy) return;
   live.busy = true;
   try {
-    const data = await api("/api/live?table=" + live.table);
+    const data = await liveTable();
     showTables(data.tables || 1);
     const stamp = JSON.stringify([data.hand_no, data.frame && data.frame.phase, data.frame && data.frame.pot, data.frame && data.frame.actor, data.frame && (data.frame.last || {}).kind]);
     if (stamp === live.stamp) return;
     live.stamp = stamp;
     live.frame = data.frame;
     renderFelt($("#felt"), data.frame || emptyFrame());
-    $("#action-log").textContent = describe(data.frame);
+    $("#action-log").textContent = (data.frame && data.frame.log) || describe(data.frame);
     if (data.playing && data.hands_saved && data.hands_saved !== live.saved) {
       live.saved = data.hands_saved;
       refreshLeaderboard();
