@@ -186,7 +186,7 @@ function sparkline(values) {
 function startBroadcast() {
   if (live.timer) return;
   tune();
-  live.timer = setInterval(tune, 220);
+  live.timer = setInterval(tune, 700);
 }
 
 function stopBroadcast() {
@@ -225,12 +225,16 @@ async function tune() {
   try {
     const data = await api("/api/live?table=" + live.table);
     showTables(data.tables || 1);
-    if (data.cursor === live.cursor && data.shoe === live.shoe) return;
-    live.cursor = data.cursor;
-    live.shoe = data.shoe;
+    const stamp = JSON.stringify([data.hand_no, data.frame && data.frame.phase, data.frame && data.frame.pot, data.frame && data.frame.actor, data.frame && (data.frame.last || {}).kind]);
+    if (stamp === live.stamp) return;
+    live.stamp = stamp;
     live.frame = data.frame;
-    renderFelt($("#felt"), data.frame);
+    renderFelt($("#felt"), data.frame || emptyFrame());
     $("#action-log").textContent = describe(data.frame);
+    if (data.playing && data.hands_saved && data.hands_saved !== live.saved) {
+      live.saved = data.hands_saved;
+      refreshLeaderboard();
+    }
   } catch (err) {
     $("#action-log").textContent = err.message;
   } finally {

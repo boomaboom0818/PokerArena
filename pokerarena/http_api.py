@@ -434,8 +434,13 @@ def _stream_hand(table: Table, hand_no: int):
     n = table.n
     bb, sb, rng = table.bb, table.sb, table.rng
     button = hand_no % n
-    deck = list(range(52))
-    rng.shuffle(deck)
+    deck = list(getattr(table, "last_deck", None) or range(52))
+    if getattr(table, "last_deck", None) is None:
+        deck = list(range(52))
+        rng.shuffle(deck)
+        table.last_deck = list(deck)
+    else:
+        table.last_deck = None
     hole = [(deck[2 * i], deck[2 * i + 1]) for i in range(n)]
     full_board = deck[2 * n: 2 * n + 5]
     board: list[int] = []
@@ -655,7 +660,7 @@ def _stream_hand(table: Table, hand_no: int):
     }
 
 
-def make_handler(store: Store):
+def make_handler(store: Store, runner=None):
     db_lock = threading.Lock()
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -774,7 +779,10 @@ def make_handler(store: Store):
                 return
             if method == "GET" and path == "/api/live":
                 table = int(qs.get("table", ["0"])[0])
-                self._send(200, broadcast_frame(table=table, store=store))
+                if runner is not None:
+                    self._send(200, runner.snapshot(table))
+                else:
+                    self._send(200, broadcast_frame(table=table, store=store))
                 return
             self._send(404, {"error": "not found", "path": path})
 
@@ -823,7 +831,10 @@ def _with_static(handler_cls, static_dir: str):
 
 def serve(db_path: str, host: str = "127.0.0.1", port: int = 8787, static_dir: str | None = None) -> None:
     store = Store(db_path)
-    handler = make_handler(store)
+    from .live_runner import LiveRunner
+    runner = LiveRunner(store)
+    runner.start()
+    handler = make_handler(store, runner)
     if static_dir:
         handler = _with_static(handler, static_dir)
     httpd = ThreadingHTTPServer((host, port), handler)

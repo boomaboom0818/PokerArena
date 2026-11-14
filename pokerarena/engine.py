@@ -89,6 +89,7 @@ class Table:
         button = hand_no % n
         deck = list(range(52))
         rng.shuffle(deck)
+        self.last_deck = list(deck)
         hole = [(deck[2 * i], deck[2 * i + 1]) for i in range(n)]
         full_board = deck[2 * n: 2 * n + 5]
         board: list[int] = []

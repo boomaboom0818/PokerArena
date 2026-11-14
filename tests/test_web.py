@@ -8,6 +8,7 @@ from urllib.request import urlopen
 
 from pokerarena.arena import Arena, ArenaConfig
 from pokerarena.bots import builtin_specs
+from pokerarena.live_runner import LiveRunner
 from pokerarena.starter import starter_source
 from pokerarena.http_api import (
     BROADCAST_EPOCH,
@@ -110,6 +111,27 @@ class ApiPayloadTests(unittest.TestCase):
         self.assertNotIn("gone_bot", names)
         frame = broadcast_frame(BROADCAST_EPOCH, table=0, store=self.store)
         self.assertIn("seats", frame["frame"])
+
+    def test_live_runner_deals_a_new_hand_and_saves_it(self):
+        runner = LiveRunner(self.store)
+        runner._play_one_step()
+        first = runner.snapshot(0)
+        self.assertTrue(first["playing"])
+        self.assertEqual(first["frame"]["phase"], "deal")
+        seen = {first["frame"]["phase"]}
+        for _ in range(40):
+            runner._play_one_step()
+            seen.add(runner.snapshot(0)["frame"]["phase"])
+        self.assertIn("preflop", seen)
+        before = self.store.db.execute("SELECT COUNT(*) n FROM hands").fetchone()["n"]
+        # Finish the rest of the 6-hand match. A hand is a few dozen steps.
+        for _ in range(400):
+            runner._play_one_step()
+            if runner.snapshot(0)["hands_saved"]:
+                break
+        after = self.store.db.execute("SELECT COUNT(*) n FROM hands").fetchone()["n"]
+        self.assertGreater(after, before)
+        runner.stop()
 
     def test_starter_is_a_bot_file(self):
         src = starter_source("my bot!")
