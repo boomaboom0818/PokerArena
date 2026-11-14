@@ -107,7 +107,6 @@ async function refreshLeaderboard() {
     ["Top Elo", top ? Math.round(top.elo) : "—"],
   ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join("");
   renderLeaderboard();
-  drawEloChart();
   if (leaderboard[0]) selectBot(leaderboard[0].bot);
 }
 
@@ -137,33 +136,6 @@ function renderLeaderboard() {
     </tr>`).join("") || `<tr><td colspan="11">No bots yet. Run a tournament, then refresh.</td></tr>`;
   $$("#lb tbody tr[data-bot]").forEach((tr) => {
     tr.addEventListener("click", () => selectBot(tr.dataset.bot));
-  });
-}
-
-function drawEloChart() {
-  const svg = $("#elo-chart");
-  const rows = leaderboard.slice(0, 12);
-  svg.innerHTML = "";
-  if (!rows.length) return;
-  const w = 640, h = 280, pad = 36;
-  const min = Math.min(...rows.map((r) => r.elo)) - 20;
-  const max = Math.max(...rows.map((r) => r.elo)) + 20;
-  const bw = (w - pad * 2) / rows.length;
-  rows.forEach((r, i) => {
-    const bh = ((r.elo - min) / (max - min || 1)) * (h - 70);
-    const x = pad + i * bw + 8;
-    const y = h - 28 - bh;
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", x); rect.setAttribute("y", y);
-    rect.setAttribute("width", bw - 16); rect.setAttribute("height", bh);
-    rect.setAttribute("rx", 6); rect.setAttribute("fill", i === 0 ? "#e4c27a" : "#2f8f5b");
-    svg.appendChild(rect);
-    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("x", x + (bw - 16) / 2); label.setAttribute("y", h - 10);
-    label.setAttribute("text-anchor", "middle"); label.setAttribute("fill", "#a8a292");
-    label.setAttribute("font-size", "11");
-    label.textContent = r.bot.length > 8 ? r.bot.slice(0, 7) + "…" : r.bot;
-    svg.appendChild(label);
   });
 }
 
@@ -251,8 +223,7 @@ async function tune() {
     live.shoe = data.shoe;
     live.frame = data.frame;
     renderFelt($("#felt"), data.frame);
-    const names = (data.names || []).join(" · ");
-    $("#action-log").textContent = `Table ${data.table + 1} · shoe ${data.shoe + 1} · ${describe(data.frame, data)} · ${names}`;
+    $("#action-log").textContent = describe(data.frame);
   } catch (err) {
     $("#action-log").textContent = err.message;
   } finally {
@@ -260,23 +231,38 @@ async function tune() {
   }
 }
 
-const VERBS = {
-  sb: "posts the small blind", bb: "posts the big blind", fold: "folds", check: "checks",
-  call: "calls", bet: "bets", raise: "raises to",
-};
+function chips(n) {
+  const v = Math.abs(Math.round(Number(n) || 0));
+  return "$" + v.toLocaleString();
+}
 
-function describe(frame, meta) {
-  if (!frame || frame.type === "session_end") return "next shoe";
+function describe(frame) {
+  if (!frame || frame.type === "session_end") return "Next hand is coming up";
   const last = frame.last;
-  let who = frame.phase;
-  if (last && last.bot) {
-    const verb = VERBS[last.kind] || last.kind;
-    const amt = last.kind === "raise" || last.kind === "bet" ? " " + last.to_total : (last.amount ? " " + last.amount : "");
-    who = `${last.bot} ${verb}${amt}`;
-  } else if (frame.phase === "board") {
-    who = "board " + (frame.board || []).join(" ");
+  if (last && last.kind === "result") {
+    const winners = (frame.seats || []).filter((s) => s.net > 0);
+    if (!winners.length) return "Hand over";
+    return winners.map((s) => `${s.bot} wins ${chips(s.net)}`).join(", ");
   }
-  return `Hand ${frame.hand_no + 1} · ${who} · step ${meta.cursor + 1}/${meta.total}`;
+  if (last && last.bot) {
+    const name = last.bot;
+    const paid = last.amount || 0;
+    if (last.kind === "fold") return `${name} folds`;
+    if (last.kind === "check") return `${name} checks`;
+    if (last.kind === "call") return paid ? `${name} calls ${chips(paid)}` : `${name} calls`;
+    if (last.kind === "bet") return `${name} bets ${chips(paid || last.to_total)}`;
+    if (last.kind === "raise") return `${name} raises to ${chips(last.to_total)}`;
+    if (last.kind === "sb") return `${name} posts the small blind`;
+    if (last.kind === "bb") return `${name} posts the big blind`;
+    return `${name} ${last.kind}`;
+  }
+  if (frame.phase === "board") {
+    const n = (frame.board || []).length;
+    const street = n >= 5 ? "River" : n === 4 ? "Turn" : "Flop";
+    return `${street}: ${(frame.board || []).join(" ")}`;
+  }
+  if (frame.phase === "deal") return "Dealing the next hand";
+  return "Waiting for the next action";
 }
 
 function renderFelt(root, frame) {
