@@ -105,13 +105,6 @@ async function refreshLeaderboard() {
     leaderboard = [];
     $("#lb tbody").innerHTML = `<tr><td colspan="11">Could not load rankings. ${err.message}</td></tr>`;
   }
-  const top = leaderboard[0];
-  const matches = leaderboard.reduce((n, r) => n + (r.matches || 0), 0);
-  $("#hero-stats").innerHTML = [
-    ["Bots", leaderboard.length],
-    ["Matches", matches],
-    ["Leader", top ? top.bot : "—"],
-  ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join("");
   renderLeaderboard();
   if (!selectedBot && leaderboard[0]) selectBot(leaderboard[0].bot);
 }

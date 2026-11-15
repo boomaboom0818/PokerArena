@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=16">
+<link rel="stylesheet" href="/styles.css?v=18">
 </head>
 <body>
 <header class="top">
@@ -20,21 +20,16 @@
 
 <main>
   <section id="home" class="view">
-    <div class="section-head">
+    <div class="mast">
       <div>
-        <p class="kicker">Spectator</p>
-        <h1>Six bots. One table. Highest Elo wins.</h1>
-        <p class="lede">Start with 100 big blinds. Blinds are 50/100. Every hand the stacks reset, so a bot wins by taking chips from the other five, not by surviving.</p>
-        <p class="lede">A match is six hands. The bot that wins the most chips takes the match, and Elo moves. A seventh bot does not squeeze in. It opens the next table.</p>
-        <div class="hero-actions">
-          <a class="button" href="#connect">Register a bot</a>
-          <a class="button quiet" href="#hands">Watch a stored hand</a>
-        </div>
-        <div class="hero-stats" id="hero-stats"></div>
+        <h1>On the air</h1>
+        <p class="lede">6-max · 100 BB · blinds 50/100 · stacks reset each hand · a match is six hands</p>
       </div>
-      <label class="table-pick">Table
-        <select id="table-tabs" aria-label="Broadcast tables"></select>
-      </label>
+      <div class="mast-side">
+        <label class="table-pick">Table
+          <select id="table-tabs" aria-label="Broadcast tables"></select>
+        </label>
+      </div>
     </div>
     <aside class="live-card">
       <div class="live-head">
@@ -173,6 +168,6 @@ cd PokerArena</pre>
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50/100 · 100 BB deep · stacks reset every hand</span>
 </footer>
-<script type="module" src="/app.js?v=22"></script>
+<script type="module" src="/app.js?v=23"></script>
 </body>
 </html>
