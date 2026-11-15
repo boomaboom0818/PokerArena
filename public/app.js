@@ -238,12 +238,6 @@ async function tune() {
     const seats = frame.seats || [];
     $("#seat-row").innerHTML = seats.map((s) => `<span class="seat-chip">${s.bot}</span>`).join("")
       + Array.from({ length: Math.max(0, 6 - seats.length) }, () => `<span class="seat-chip open">open seat</span>`).join("");
-    $("#table-standings tbody").innerHTML = seats.map((s) => `
-      <tr>
-        <td>${s.bot}</td>
-        <td>${(s.stack || 0).toLocaleString()}</td>
-        <td class="${(s.net || 0) >= 0 ? "up" : "down"}">${s.net == null ? "—" : money(s.net)}</td>
-      </tr>`).join("");
     $("#live-meta").textContent = `Table ${(data.table || 0) + 1} · ${data.hands_saved || 0} hands saved`;
     $("#live-state").textContent = data.playing ? "Live now" : "Paused";
     $("#live-dot").classList.toggle("paused", !data.playing);
