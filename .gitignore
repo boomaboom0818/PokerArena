@@ -12,3 +12,5 @@ build/
 dist/
 
 spacetimedb/node_modules/
+
+spacetimedb-hu/node_modules/

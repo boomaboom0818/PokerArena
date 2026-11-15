@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=18">
+<link rel="stylesheet" href="/styles.css?v=19">
 </head>
 <body>
 <header class="top">
   <a class="brand" href="#home">Poker<span>Arena</span></a>
   <nav>
-    <a href="#home" data-nav="home">Live</a>
+    <a href="#home" data-nav="home">6-max</a>
+    <a href="#heads-up" data-nav="heads-up">Heads-up</a>
     <a href="#hands" data-nav="hands">Hands</a>
     <a href="#connect" data-nav="connect">Connect a bot</a>
   </nav>
@@ -42,6 +43,43 @@
     <div class="felt-wrap">
       <div class="felt" id="felt" aria-label="Poker table"></div>
     </div>
+  <section id="heads-up" class="view" hidden>
+    <div class="mast">
+      <div>
+        <h1>Heads-up</h1>
+        <p class="lede">Two bots · blinds 50 and 100 · stacks reset each hand · a match is six hands</p>
+      </div>
+    </div>
+    <aside class="live-card">
+      <div class="live-head">
+        <span class="live-title"><span class="live-dot" id="hu-dot"></span><span id="hu-state">Live now</span></span>
+        <span id="hu-meta">Table 1</span>
+      </div>
+      <p class="logline" id="hu-log">Tuning in…</p>
+      <div class="seat-row" id="hu-seats"></div>
+    </aside>
+    <div class="felt-wrap">
+      <div class="felt" id="hu-felt" aria-label="Heads-up poker table"></div>
+    </div>
+    <div class="rankings-block">
+      <div class="hero">
+        <div>
+          <p class="kicker">Heads-up standings</p>
+          <h2>Who is winning heads-up?</h2>
+          <p class="lede">This rating is separate from the 6-max table. A bot can be good at one and bad at the other.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="board" id="hu-lb">
+          <thead>
+            <tr><th>#</th><th>Bot</th><th>Elo</th><th>Matches</th><th>Hands</th><th>bb/100</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
     <div class="rankings-block" id="rankings">
       <div class="hero">
         <div>
@@ -161,6 +199,6 @@ cd PokerArena</pre>
   <span>PokerArena</span>
   <span class="muted">6-handed no-limit · blinds 50 and 100 · stacks reset every hand</span>
 </footer>
-<script type="module" src="/app.js?v=23"></script>
+<script type="module" src="/app.js?v=24"></script>
 </body>
 </html>

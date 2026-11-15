@@ -1,4 +1,4 @@
-import { leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -56,6 +56,8 @@ function route() {
   if (name === "connect" && !$("#join-form").dataset.bound) loadConnect();
   if (name === "home") startBroadcast();
   else stopBroadcast();
+  if (name === "heads-up") startHeadsUp();
+  else stopHeadsUp();
   if (name !== "hands") stopReplay();
 }
 
@@ -189,6 +191,52 @@ function startBroadcast() {
   if (live.timer) return;
   tune();
   live.timer = setInterval(tune, 1000);
+}
+
+let headsUp = { timer: null, stamp: "" };
+
+function startHeadsUp() {
+  if (headsUp.timer) return;
+  tuneHeadsUp();
+  loadHeadsUpBoard();
+  headsUp.timer = setInterval(() => { tuneHeadsUp(); loadHeadsUpBoard(); }, 1000);
+}
+function stopHeadsUp() {
+  clearInterval(headsUp.timer);
+  headsUp.timer = null;
+}
+async function tuneHeadsUp() {
+  try {
+    const data = await liveTable(headsUpDb);
+    const frame = data.frame || {};
+    const stamp = JSON.stringify([data.hands_saved, frame.log, frame.pot]);
+    if (stamp === headsUp.stamp) return;
+    headsUp.stamp = stamp;
+    renderFelt($("#hu-felt"), frame.seats ? frame : emptyFrame());
+    $("#hu-log").textContent = frame.log || describe(frame);
+    const seats = frame.seats || [];
+    $("#hu-seats").innerHTML = seats.map((s) => `<span class="seat-chip">${s.bot}</span>`).join("")
+      + Array.from({ length: Math.max(0, 2 - seats.length) }, () => `<span class="seat-chip open">open seat</span>`).join("");
+    $("#hu-meta").textContent = `${data.hands_saved || 0} hands saved`;
+    $("#hu-state").textContent = data.playing ? "Live now" : "Paused";
+    $("#hu-dot").classList.toggle("paused", !data.playing);
+  } catch (err) {
+    $("#hu-log").textContent = err.message;
+  }
+}
+async function loadHeadsUpBoard() {
+  try {
+    const data = await stdbBoard(headsUpDb);
+    const rows = data.bots || [];
+    $("#hu-lb tbody").innerHTML = rows.map((r) => `
+      <tr>
+        <td>${r.rank}</td><td class="bot-name">${r.bot}</td><td>${Math.round(r.elo)}</td>
+        <td>${r.matches}</td><td>${r.hands.toLocaleString()}</td>
+        <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
+      </tr>`).join("") || `<tr><td colspan="6">No heads-up matches yet.</td></tr>`;
+  } catch (err) {
+    $("#hu-lb tbody").innerHTML = `<tr><td colspan="6">${err.message}</td></tr>`;
+  }
 }
 
 function stopBroadcast() {

@@ -1,8 +1,9 @@
 const HOST = "https://maincloud.spacetimedb.com";
 const DB = "poker-arena";
+const HU_DB = "poker-heads-up";
 
-function sql(query) {
-  return fetch(HOST + "/v1/database/" + DB + "/sql", {
+function sql(query, db = DB) {
+  return fetch(HOST + "/v1/database/" + db + "/sql", {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
     body: query,
@@ -32,8 +33,8 @@ export function pickTable(id) {
   pickedTable = Number(id) || 0;
 }
 
-export async function liveTable() {
-  const result = await sql("SELECT * FROM table_state");
+export async function liveTable(db = DB) {
+  const result = await sql("SELECT * FROM table_state", db);
   const all = rows(result);
   if (!all.length) return { playing: false, tables: 0, frame: { seats: [], board: [], pot: 0 } };
   const row = all.find((r) => Number(r.table_id) === pickedTable) || all[0];
@@ -59,8 +60,8 @@ export async function liveTable() {
   };
 }
 
-export async function leaderboard() {
-  const result = await sql("SELECT * FROM bot");
+export async function leaderboard(db = DB) {
+  const result = await sql("SELECT * FROM bot", db);
   const bots = rows(result).map((b) => ({
     bot: b.name,
     elo: Math.round(b.elo * 10) / 10,
@@ -78,3 +79,5 @@ export async function leaderboard() {
   bots.forEach((b, i) => { b.rank = i + 1; });
   return { bots };
 }
+
+export const headsUpDb = HU_DB;
