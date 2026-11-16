@@ -485,8 +485,6 @@ function showReplay(index) {
   $$("#replay-script .script-line").forEach((line) => {
     line.classList.toggle("on", Number(line.dataset.step) === replay.index);
   });
-  const on = $("#replay-script .script-line.on");
-  if (on) on.scrollIntoView({ block: "nearest" });
 }
 
 function playReplay() {
