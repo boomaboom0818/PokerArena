@@ -214,9 +214,6 @@ async function tuneHeadsUp() {
     headsUp.stamp = stamp;
     renderFelt($("#hu-felt"), frame.seats ? frame : emptyFrame());
     $("#hu-log").textContent = frame.log || describe(frame);
-    const seats = frame.seats || [];
-    $("#hu-seats").innerHTML = seats.map((s) => `<span class="seat-chip">${s.bot}</span>`).join("")
-      + Array.from({ length: Math.max(0, 2 - seats.length) }, () => `<span class="seat-chip open">open seat</span>`).join("");
     $("#hu-meta").textContent = `${data.hands_saved || 0} hands saved`;
     $("#hu-state").textContent = data.playing ? "Live now" : "Paused";
     $("#hu-dot").classList.toggle("paused", !data.playing);
@@ -283,9 +280,6 @@ async function tune() {
     renderFelt($("#felt"), data.frame || emptyFrame());
     const frame = data.frame || {};
     $("#action-log").textContent = frame.log || describe(frame);
-    const seats = frame.seats || [];
-    $("#seat-row").innerHTML = seats.map((s) => `<span class="seat-chip">${s.bot}</span>`).join("")
-      + Array.from({ length: Math.max(0, 6 - seats.length) }, () => `<span class="seat-chip open">open seat</span>`).join("");
     $("#live-meta").textContent = `Table ${(data.table || 0) + 1} · ${data.hands_saved || 0} hands saved`;
     $("#live-state").textContent = data.playing ? "Live now" : "Paused";
     $("#live-dot").classList.toggle("paused", !data.playing);

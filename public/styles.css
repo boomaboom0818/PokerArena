@@ -52,6 +52,10 @@ h2 { font-weight: 500; margin: 0 0 8px; }
   display: flex; gap: 24px; justify-content: space-between; align-items: flex-end; flex-wrap: wrap;
 }
 .hero { margin-bottom: 22px; }
+.mast { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
+.mast h1 { font-size: clamp(1.6rem, 2.4vw, 2.1rem); margin: 0; }
+.mast .lede { margin: 4px 0 0; }
+.mast-side { display: flex; align-items: end; gap: 16px; }
 .hero-actions { display: flex; gap: 10px; margin: 14px 0; }
 .button, a.button {
   display: inline-block; background: var(--gold); color: #1a140c;
@@ -59,18 +63,13 @@ h2 { font-weight: 500; margin: 0 0 8px; }
 }
 a.button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .live-card {
-  margin-top: 18px; background: var(--bg-2); border: 1px solid var(--line);
+  margin-top: 12px; background: var(--bg-2); border: 1px solid var(--line);
   border-radius: 16px; padding: 14px 16px;
 }
 .live-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
 .live-title { display: flex; gap: 8px; align-items: center; color: var(--ink); }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--up); display: inline-block; }
 .live-dot.paused { background: var(--muted); }
-.seat-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.seat-chip {
-  border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 0.9rem;
-}
-.seat-chip.open { color: var(--muted); }
 .results { width: 100%; border-collapse: collapse; }
 .results th, .results td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .results-panel { margin-top: 16px; }
@@ -112,7 +111,7 @@ figcaption { color: var(--muted); margin-bottom: 8px; }
 #bot-card { min-height: 420px; }
 .rankings-block { margin-top: 36px; padding-top: 8px; border-top: 1px solid var(--line); }
 .rankings-block h2 { font-size: 1.8rem; margin: 0 0 8px; }
-.felt-wrap { margin: 28px 8px 12px; }
+.felt-wrap { margin: 12px 8px 8px; }
 .felt {
   position: relative; height: 520px; border-radius: 220px;
   background:
