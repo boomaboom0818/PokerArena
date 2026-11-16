@@ -155,7 +155,6 @@ async function selectBot(name) {
     const hist = d.history || [];
     card.innerHTML = `
       <h2>${d.bot}</h2>
-      <p class="muted">${d.description || "Custom bot"}</p>
       <p><b>${Math.round(d.elo)}</b> Elo · ${d.matches} matches · ${d.hands.toLocaleString()} hands</p>
       ${sparkline(hist.map((h) => h.elo_after))}
       <h2>Recent matches</h2>
