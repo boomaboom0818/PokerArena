@@ -2,7 +2,7 @@
 // WebSocket protocol a bot uses, so what you see is exactly what the bots see
 // (plus the hands, which are published at the bell).
 
-import { HOST as HTTP_HOST } from "./stdb.js?v=7";
+import { HOST as HTTP_HOST } from "./stdb.js?v=8";
 const WS_HOST = HTTP_HOST.replace(/^https:/, "wss:");
 const DB = "figgie-arena";
 const PROTOCOL = "v1.json.spacetimedb";

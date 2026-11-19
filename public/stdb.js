@@ -76,8 +76,8 @@ export async function leaderboard(db = DB) {
     return {
     bot: b.name,
     chips: Number(b.chips),
-    matches: b.matches,
-    hands: b.hands,
+    // hands played, updated after every hand (standings.hands only moves when a match ends)
+    hands: played,
     bb100: b.hands ? Math.round(Number(b.chips) / b.hands * 1000) / 10 : 0,
     stderr: 0,
     ci95: 0,

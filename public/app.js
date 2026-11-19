@@ -1,4 +1,4 @@
-import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=7";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=8";
 import { startFiggie, stopFiggie } from "./figgie.js?v=9";
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -129,7 +129,7 @@ function bindRankings() {
     renderLeaderboard();
     $("#lb").dataset.matches = String($$("#lb tbody tr[data-bot]").length);
   });
-  $("#min-hands").addEventListener("change", refreshLeaderboard);
+  $("#min-hands").addEventListener("change", renderLeaderboard);
   $$("#lb th").forEach((th) => th.addEventListener("click", () => {
     const key = th.dataset.sort;
     sortDir = sortKey === key ? -sortDir : (key === "bot" ? 1 : -1);
@@ -139,13 +139,12 @@ function bindRankings() {
 }
 
 async function refreshLeaderboard() {
-  const min = $("#min-hands").checked ? 100 : 0;
   try {
     const data = await stdbBoard();
     leaderboard = data.bots || [];
   } catch (err) {
     leaderboard = [];
-    $("#lb tbody").innerHTML = `<tr><td colspan="12">Could not load rankings. ${esc(err.message)}</td></tr>`;
+    $("#lb tbody").innerHTML = `<tr><td colspan="11">Could not load rankings. ${esc(err.message)}</td></tr>`;
   }
   renderLeaderboard();
   if (!selectedBot && leaderboard[0]) selectBot(leaderboard[0].bot);
@@ -154,7 +153,7 @@ async function refreshLeaderboard() {
 function renderLeaderboard() {
   const q = $("#bot-filter").value.trim().toLowerCase();
   const rows = leaderboard
-    .filter((r) => !q || r.bot.toLowerCase().includes(q))
+    .filter((r) => (!q || r.bot.toLowerCase().includes(q)) && (!$("#min-hands").checked || r.hands >= 100))
     .slice()
     .sort((a, b) => {
       const av = a[sortKey] ?? -1, bv = b[sortKey] ?? -1;
@@ -166,16 +165,15 @@ function renderLeaderboard() {
       <td>${r.rank}</td>
       <td class="bot-name">${esc(r.bot)}</td>
       <td class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</td>
-      <td>${r.matches}</td>
-      <td>${winRate(r)}</td>
       <td>${r.hands.toLocaleString()}</td>
+      <td>${winRate(r)}</td>
       <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
       <td>${r.ci95.toFixed(1)}</td>
       <td>${r.vpip.toFixed(0)}</td>
       <td>${r.pfr.toFixed(0)}</td>
       <td>${r.af.toFixed(1)}</td>
       <td>${r.match_wins}</td>
-    </tr>`).join("") || `<tr><td colspan="12">No bots yet. Run a tournament, then refresh.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="11">No bots yet. Run a tournament, then refresh.</td></tr>`;
   $$("#lb tbody tr[data-bot]").forEach((tr) => {
     tr.addEventListener("click", () => selectBot(tr.dataset.bot));
   });
@@ -196,7 +194,7 @@ async function selectBot(name) {
     const hist = d.history || [];
     card.innerHTML = `
       <h2>${esc(d.bot)}</h2>
-      <p><b class="${d.chips >= 0 ? "up" : "down"}">${money(d.chips)}</b> chips · ${Number(d.matches)} matches · ${Number(d.hands).toLocaleString()} hands</p>
+      <p><b class="${d.chips >= 0 ? "up" : "down"}">${money(d.chips)}</b> chips · ${Number(d.hands).toLocaleString()} hands</p>
       ${sparkline(hist.map((h) => h.chips_after))}
       <h2>Recent matches</h2>
       ${(d.recent_matches || []).slice(0, 8).map((m) => `
@@ -273,11 +271,11 @@ async function loadHeadsUpBoard() {
     $("#hu-lb tbody").innerHTML = rows.map((r) => `
       <tr>
         <td>${r.rank}</td><td class="bot-name">${esc(r.bot)}</td><td class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</td>
-        <td>${r.matches}</td><td>${winRate(r)}</td><td>${r.hands.toLocaleString()}</td>
+        <td>${r.hands.toLocaleString()}</td><td>${winRate(r)}</td>
         <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
-      </tr>`).join("") || `<tr><td colspan="7">No heads-up matches yet.</td></tr>`;
+      </tr>`).join("") || `<tr><td colspan="6">No heads-up hands yet.</td></tr>`;
   } catch (err) {
-    $("#hu-lb tbody").innerHTML = `<tr><td colspan="7">${esc(err.message)}</td></tr>`;
+    $("#hu-lb tbody").innerHTML = `<tr><td colspan="6">${esc(err.message)}</td></tr>`;
   }
 }
 
