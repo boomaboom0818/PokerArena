@@ -140,6 +140,33 @@ def cmd_replay(args) -> None:
     print(format_hand(store, args.hand_id))
 
 
+def cmd_figgie(args) -> None:
+    from . import figgie
+
+    bot = figgie.load_bot(args.bot)
+    if args.name:
+        bot.name = args.name
+    print(f"connecting {figgie.clean_name(bot.name)} to {args.host}/{args.database} (Ctrl-C to stop)")
+    try:
+        figgie.run(bot, host=args.host, database=args.database, rounds=args.rounds)
+    except KeyboardInterrupt:
+        print("stopped")
+
+
+def cmd_figgie_new(args) -> None:
+    from pathlib import Path
+
+    from .figgie import starter_source
+
+    path = Path(args.path)
+    if path.exists() and not args.force:
+        raise SystemExit(f"{path} already exists. Pass --force to replace it.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(starter_source(args.name or path.stem))
+    print(f"wrote {path}")
+    print(f"next: python -m pokerarena figgie {path}")
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="pokerarena", description="Texas Hold'em bot arena with Elo ratings")
     p.add_argument("--db", default="arena.db", help="SQLite database path (default arena.db)")
@@ -195,6 +222,20 @@ def main(argv=None) -> None:
     rp = sub.add_parser("replay", help="print one hand history")
     rp.add_argument("hand_id", type=int, nargs="?")
     rp.set_defaults(fn=cmd_replay)
+
+    fg = sub.add_parser("figgie", help="connect a Figgie bot to the live arena over WebSocket")
+    fg.add_argument("bot", help="path to a .py file with a FiggieBot subclass")
+    fg.add_argument("--name", help="arena name (default: the class's name attribute)")
+    fg.add_argument("--rounds", type=int, help="stop after this many rounds (default: run forever)")
+    fg.add_argument("--host", default="wss://maincloud.spacetimedb.com")
+    fg.add_argument("--database", default="figgie-arena")
+    fg.set_defaults(fn=cmd_figgie)
+
+    fn = sub.add_parser("figgie-new", help="write a starter Figgie bot file")
+    fn.add_argument("path", help="where to write the .py file, for example my_figgie_bot.py")
+    fn.add_argument("--name", help="arena name (default: the file name)")
+    fn.add_argument("--force", action="store_true")
+    fn.set_defaults(fn=cmd_figgie_new)
 
     sv = sub.add_parser("serve", help="website + JSON API (what Vercel hosts)")
     sv.add_argument("--host", default="127.0.0.1")

@@ -32,12 +32,17 @@ const tableState = table({ name: 'table_state', public: true }, {
   handsSaved: t.u32(),
 });
 
+const control = table({ name: 'control', public: true }, {
+  id: t.u32().primaryKey(),
+  paused: t.bool(),
+});
+
 const tickTimer = table({ name: 'tick_timer' }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
 
-const spacetimedb = schema({ bot, tableState, tickTimer });
+const spacetimedb = schema({ bot, tableState, tickTimer, control });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
@@ -329,6 +334,7 @@ function field(ctx: Ctx): { tables: string[][]; sources: Record<string, string> 
 }
 
 function playMatch(ctx: Ctx): void {
+  if (ctx.db.control.id.find(0)?.paused) return;
   const seed = Number(ctx.timestamp.microsSinceUnixEpoch % 1_000_000_007n);
   const { tables, sources } = field(ctx);
   const liveIds = new Set<number>();
@@ -377,8 +383,18 @@ export const init = spacetimedb.init(ctx => {
     ctx.db.bot.insert({ name, elo: 1500, matches: 0, hands: 0, chips: 0n, source: BUILTIN_SOURCE });
   }
   ctx.db.tickTimer.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.interval(1_000_000n) });
+  ctx.db.control.insert({ id: 0, paused: false });
   playMatch(ctx);
 });
+
+export const setPaused = spacetimedb.reducer(
+  { paused: t.bool() },
+  (ctx, { paused }) => {
+    const row = ctx.db.control.id.find(0);
+    if (row) ctx.db.control.id.update({ ...row, paused });
+    else ctx.db.control.insert({ id: 0, paused });
+  }
+);
 
 export const removeBot = spacetimedb.reducer(
   { name: t.string() },

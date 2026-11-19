@@ -1,4 +1,5 @@
 import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js";
+import { startFiggie, stopFiggie } from "./figgie.js?v=1";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -58,6 +59,8 @@ function route() {
   else stopBroadcast();
   if (name === "heads-up") startHeadsUp();
   else stopHeadsUp();
+  if (name === "figgie") startFiggie();
+  else stopFiggie();
   if (name !== "hands") stopReplay();
 }
 

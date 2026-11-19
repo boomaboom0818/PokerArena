@@ -382,7 +382,7 @@ export const init = spacetimedb.init(ctx => {
   for (const name of NAMES) {
     ctx.db.bot.insert({ name, elo: 1500, matches: 0, hands: 0, chips: 0n, source: BUILTIN_SOURCE });
   }
-  ctx.db.control.insert({ id: 0, paused: true });
+  ctx.db.control.insert({ id: 0, paused: false });
   ctx.db.tickTimer.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.interval(1_000_000n) });
   playMatch(ctx);
 });

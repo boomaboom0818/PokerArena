@@ -1,4 +1,4 @@
-# pokerarena — Texas Hold'em bot arena
+# pokerarena — bot arena for Hold'em and Figgie
 
 Pure-Python (3.10+, **no dependencies**) arena where many bots play 6-handed no-limit
 Hold'em at the same time, get a multiplayer **Elo** rating, and leave behind a
@@ -32,6 +32,66 @@ The committed [data/sample.db](data/sample.db) is the leaderboard the hosted
 site reads. After a real run, replace that file (or set `POKERARENA_DB`) and
 redeploy. To watch a match as it is written, run `serve` against your own
 `arena.db` and open the site with `?api=http://127.0.0.1:8787`.
+
+## Figgie ([spacetimedb-figgie/](spacetimedb-figgie/src/index.ts))
+
+Jane Street's trading card game, live around the clock in the `figgie-arena`
+SpacetimeDB database. Four bots sit at a table; a fifth opens another table.
+
+* 40 cards: one suit has 12, two have 10, one has 8. The **goal suit** is the other suit of
+  the 12-card suit's colour, so it has 8 or 10 cards. Nobody is told which.
+* Everyone starts with $350, antes $50 into a $200 pot and is dealt 10 cards.
+* 60 seconds of open trading: bid, offer, buy or sell one card at a time. **Any trade clears
+  every quote at the table.**
+* At the bell each goal card pays $10; the rest of the pot ($100 or $120) goes to whoever
+  holds the most goal cards. P&L = cash + payout − $350. Elo is pairwise on P&L.
+* Five house bots (`bayes`, `maker`, `hoarder`, `tape`, `noise`) fill empty seats. Hands are
+  private until the bell; every round is kept in `round_result` (dealt and final hands, the
+  full tape, payouts, trade edge, Elo change) for replays and analysis.
+
+Connect a bot from Python (standard library only — the WebSocket client is built in):
+
+```
+python -m pokerarena figgie-new my_figgie_bot.py     # starter file
+python -m pokerarena figgie my_figgie_bot.py         # trade in the live arena
+```
+
+```python
+from pokerarena.figgie import FiggieBot
+
+class MyBot(FiggieBot):
+    name = "my_figgie_bot"
+    def on_update(self, s):                # 4x a second while trading
+        odds = s.goal_odds()               # P(goal suit) from the hand you were dealt
+        goal = max(odds, key=odds.get)
+        if s.book[goal].ask and s.book[goal].ask < 10 * odds[goal] + 3:
+            self.buy(goal)
+```
+
+Any other language: open `wss://maincloud.spacetimedb.com/v1/database/figgie-arena/subscribe`
+with subprotocol `v1.json.spacetimedb`, subscribe to `my_hand`, `seat`, `quote`, `trade` and
+`figgie_table`, call `register(name)`, then `bid(suit, price)`, `ask(suit, price)`,
+`buy(suit)`, `sell(suit)`, `cancel(suit, side)`. Keep the token from the first message and send
+it back (`?token=` or `Authorization: Bearer`) to keep your name. The first snapshot sends rows
+as JSON objects; later `TransactionUpdateLight` messages send them as arrays in column order
+(see the Figgie page or [figgie.py](pokerarena/figgie.py) `COLUMNS`). You can also paste a
+JavaScript `act(state)` on the site and the module runs it for you (`host_bot`).
+
+Publish or update the module with
+`spacetime publish --module-path spacetimedb-figgie figgie-arena` (always pass
+`--module-path`: the root `spacetime.json` points at the 6-max module).
+
+### Three live databases
+
+| page | database | module |
+|---|---|---|
+| 6-max | `poker-arena` | [spacetimedb/](spacetimedb/src/index.ts) |
+| Heads-up | `poker-heads-up` | [spacetimedb-hu/](spacetimedb-hu/src/index.ts) |
+| Figgie | `figgie-arena` | [spacetimedb-figgie/](spacetimedb-figgie/src/index.ts) |
+
+Each has its own scheduled tick, so all three play at the same time whether or not anyone is
+watching. The poker modules have a `control` row; `spacetime call <db> set_paused false`
+resumes one that was paused.
 
 ## How the arena works
 

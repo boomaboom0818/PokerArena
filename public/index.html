@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=20">
+<link rel="stylesheet" href="/styles.css?v=21">
 </head>
 <body>
 <header class="top">
@@ -13,6 +13,7 @@
   <nav>
     <a href="#home" data-nav="home">6-max</a>
     <a href="#heads-up" data-nav="heads-up">Heads-up</a>
+    <a href="#figgie" data-nav="figgie">Figgie</a>
     <a href="#hands" data-nav="hands">Hands</a>
     <a href="#connect" data-nav="connect">Connect a bot</a>
   </nav>
@@ -42,39 +43,6 @@
     <div class="felt-wrap">
       <div class="felt" id="felt" aria-label="Poker table"></div>
     </div>
-  <section id="heads-up" class="view" hidden>
-    <div class="mast">
-      <div>
-        <h1>Heads-up</h1>
-        <p class="lede">Two bots · blinds 50 and 100 · stacks reset each hand · a match is six hands</p>
-      </div>
-    </div>
-    <aside class="live-card">
-      <div class="live-head">
-        <span class="live-title"><span class="live-dot" id="hu-dot"></span><span id="hu-state">Live now</span></span>
-        <span id="hu-meta">Table 1</span>
-      </div>
-      <p class="logline" id="hu-log">Tuning in…</p>
-    </aside>
-    <div class="felt-wrap">
-      <div class="felt" id="hu-felt" aria-label="Heads-up poker table"></div>
-    </div>
-    <div class="rankings-block">
-      <div class="hero">
-        <div>
-          <h2>Leaderboard</h2>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table class="board" id="hu-lb">
-          <thead>
-            <tr><th>#</th><th>Bot</th><th>Elo</th><th>Matches</th><th>Hands</th><th>bb/100</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
 
     <div class="rankings-block" id="rankings">
       <div class="hero">
@@ -110,6 +78,230 @@
         <h2>Pick a bot</h2>
         <p class="muted">Click a row to see its rating history and recent matches.</p>
       </aside>
+    </div>
+  </section>
+
+  <section id="heads-up" class="view" hidden>
+    <div class="mast">
+      <div>
+        <h1>Heads-up</h1>
+        <p class="lede">Two bots · blinds 50 and 100 · stacks reset each hand · a match is six hands</p>
+      </div>
+    </div>
+    <aside class="live-card">
+      <div class="live-head">
+        <span class="live-title"><span class="live-dot" id="hu-dot"></span><span id="hu-state">Live now</span></span>
+        <span id="hu-meta">Table 1</span>
+      </div>
+      <p class="logline" id="hu-log">Tuning in…</p>
+    </aside>
+    <div class="felt-wrap">
+      <div class="felt" id="hu-felt" aria-label="Heads-up poker table"></div>
+    </div>
+    <div class="rankings-block">
+      <div class="hero">
+        <div>
+          <h2>Leaderboard</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="board" id="hu-lb">
+          <thead>
+            <tr><th>#</th><th>Bot</th><th>Elo</th><th>Matches</th><th>Hands</th><th>bb/100</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="figgie" class="view" hidden>
+    <div class="mast">
+      <div>
+        <h1>Figgie</h1>
+        <p class="lede">Four bots · 40 cards · $200 pot · one minute of open trading per round</p>
+      </div>
+      <div class="mast-side">
+        <label class="table-pick" hidden>Table
+          <select id="fg-tables" aria-label="Figgie tables"></select>
+        </label>
+      </div>
+    </div>
+    <aside class="live-card">
+      <div class="live-head">
+        <span class="live-title"><span class="live-dot paused" id="fg-dot"></span><span id="fg-state">Connecting…</span></span>
+        <span id="fg-meta"></span>
+      </div>
+      <p class="logline" id="fg-log">Tuning in…</p>
+    </aside>
+
+    <div class="fg-stage">
+      <div class="fg-felt" id="fg-felt" aria-label="Figgie table"></div>
+      <div class="fg-side">
+        <div class="panel fg-panel">
+          <h3>Order book</h3>
+          <div class="table-wrap flat">
+            <table class="fg-book" id="fg-book">
+              <thead><tr><th></th><th>Best bid</th><th>Best offer</th><th>Last</th><th>Trades</th><th title="Each suit's share of the average trade price. The market's guess at the goal suit.">Market says</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="muted small">Any trade wipes every quote at the table. Bids and offers are for one card.</p>
+        </div>
+        <div class="panel fg-panel">
+          <h3>Trade prices this round</h3>
+          <svg class="fg-chart" id="fg-chart" role="img" aria-label="Trade prices by suit over the round"></svg>
+          <div class="fg-legend">
+            <span><i style="background:#c9d3e0"></i>♠ spades</span><span><i style="background:#7dcea0"></i>♣ clubs</span>
+            <span><i style="background:#e8705f"></i>♥ hearts</span><span><i style="background:#e4b24a"></i>♦ diamonds</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fg-lower">
+      <div class="panel fg-panel">
+        <h3>Tape <small class="muted" id="fg-tape-count"></small></h3>
+        <ol class="fg-tape" id="fg-tape"></ol>
+      </div>
+      <div class="panel fg-panel">
+        <h3 id="fg-reveal-title">Last round</h3>
+        <div id="fg-reveal"><p class="muted">The first bell has not rung yet.</p></div>
+      </div>
+    </div>
+
+    <div class="rankings-block" id="fg-board-block">
+      <div class="hero"><div><h2>Leaderboard</h2></div></div>
+      <div class="toolbar">
+        <input id="fg-filter" type="search" placeholder="Filter bots" aria-label="Filter Figgie bots">
+        <span class="muted small">Elo moves on who made more money at the table. Edge scores each trade at the truth.</span>
+      </div>
+      <div class="table-wrap">
+        <table class="board" id="fg-lb">
+          <thead>
+            <tr>
+              <th data-sort="rank">#</th>
+              <th data-sort="bot">Bot</th>
+              <th data-sort="elo">Elo</th>
+              <th data-sort="rounds">Rounds</th>
+              <th data-sort="pnl_rd" title="Average profit per round">P&amp;L/rd</th>
+              <th data-sort="ci95" title="95% error bar on P&amp;L per round">±95%</th>
+              <th data-sort="bonus" title="Rounds where the bot held the most goal cards">Bonus</th>
+              <th data-sort="goal_rd" title="Goal-suit cards held at the bell">Goal/rd</th>
+              <th data-sort="trades_rd">Trades/rd</th>
+              <th data-sort="edge_tr" title="Average profit per trade when a goal card is worth $10 and any other card $0">Edge/trade</th>
+              <th data-sort="pnl">Total</th>
+              <th data-sort="status">Now</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <aside class="panel" id="fg-bot-card">
+        <h2>Pick a bot</h2>
+        <p class="muted">Click a row or a seat to see its rounds.</p>
+      </aside>
+    </div>
+
+    <div class="rankings-block" id="fg-replay">
+      <div class="hero"><div><h2>Replay a round</h2><p class="muted" id="fg-replay-title"></p></div></div>
+      <div class="split hands-split">
+        <div class="panel list" id="fg-rounds"><p class="muted">Loading rounds…</p></div>
+        <div>
+          <p class="logline small-log" id="fg-replay-log">Pick a round.</p>
+          <div class="replay-bar">
+            <button type="button" id="fg-replay-play">Play</button>
+            <button type="button" id="fg-replay-prev" aria-label="Previous trade">Back</button>
+            <button type="button" id="fg-replay-next" aria-label="Next trade">Next</button>
+            <input id="fg-replay-scrub" type="range" min="0" max="0" value="0" aria-label="Round progress">
+          </div>
+          <div class="fg-rseats" id="fg-replay-seats"></div>
+          <svg class="fg-chart" id="fg-replay-chart" role="img" aria-label="Trade prices in this round"></svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="rankings-block" id="fg-connect">
+      <div class="hero"><div><h2>Connect a Figgie bot</h2>
+        <p class="muted">Your bot opens one WebSocket, claims a name, and trades. It sits down at the next deal and plays every round while it stays connected.</p></div></div>
+      <div class="fg-connect">
+        <div class="panel">
+          <h3>Python, no installs</h3>
+          <pre class="code" id="fg-py-cmd">git clone https://github.com/boomaboom0818/PokerArena.git
+cd PokerArena
+python -m pokerarena figgie-new my_figgie_bot.py
+python -m pokerarena figgie my_figgie_bot.py</pre>
+          <button type="button" class="copy" data-copy="fg-py-cmd">Copy</button>
+          <p class="muted">Edit <code>on_update(self, s)</code>. It runs four times a second with <code>s.hand</code>, <code>s.dealt</code>, <code>s.cash</code>, <code>s.book[suit].bid/.ask</code>, <code>s.trades</code>, <code>s.time_left</code> and <code>s.goal_odds()</code>. Trade with <code>self.bid(suit, price)</code>, <code>self.ask(suit, price)</code>, <code>self.buy(suit)</code>, <code>self.sell(suit)</code> and <code>self.cancel()</code>.</p>
+        </div>
+        <div class="panel">
+          <h3>Any language, raw WebSocket</h3>
+          <p class="muted">Connect to <code id="fg-ws-url"></code> with subprotocol <code>v1.json.spacetimedb</code>. The first message gives you a token; send it back as <code>?token=</code> (or <code>Authorization: Bearer</code>) next time to keep your name.</p>
+          <pre class="code" id="fg-js-cmd">const ws = new WebSocket(
+  "wss://maincloud.spacetimedb.com/v1/database/figgie-arena/subscribe",
+  "v1.json.spacetimedb");
+const call = (reducer, args) => ws.send(JSON.stringify(
+  { CallReducer: { reducer, args: JSON.stringify(args), request_id: 1, flags: 0 } }));
+
+ws.onmessage = (e) => {
+  const m = JSON.parse(e.data);
+  if (m.IdentityToken) {
+    ws.send(JSON.stringify({ Subscribe: { request_id: 1, query_strings: [
+      "SELECT * FROM my_hand", "SELECT * FROM seat", "SELECT * FROM quote",
+      "SELECT * FROM trade", "SELECT * FROM figgie_table"] } }));
+    call("register", ["my_bot"]);
+  }
+  // InitialSubscription, then TransactionUpdateLight for every change
+};
+// call("bid", ["hearts", 7]);  call("ask", ["spades", 12]);
+// call("buy", ["hearts"]);     call("sell", ["clubs"]);   call("cancel", ["", ""]);</pre>
+          <button type="button" class="copy" data-copy="fg-js-cmd">Copy</button>
+          <details>
+            <summary>Tables and columns</summary>
+            <p class="muted">The first snapshot sends rows as JSON objects. Later updates send them as JSON arrays in this column order, as a delete of the old row and an insert of the new one.</p>
+            <ul class="fg-schema">
+              <li><code>my_hand</code> your cards only: seat_key, table_id, owner, name, spades, clubs, hearts, diamonds, dealt</li>
+              <li><code>figgie_table</code> table_id, round_no, phase, started_at, ends_at, next_at, pot, goal, twelve, counts, names, last_trade</li>
+              <li><code>seat</code> seat_key, table_id, seat, name, kind, cash, cards, buys, sells, actions</li>
+              <li><code>quote</code> quote_id, table_id, seat_key, name, suit, side, price, at</li>
+              <li><code>trade</code> trade_id, table_id, round_no, suit, price, buyer, seller, at</li>
+              <li><code>player</code> name, owner, kind, elo, rounds, pnl, pnl_sq, bonuses, tops, trades, edge, goal_cards, rejects, online, last_seen, joined_at, table_id</li>
+              <li><code>round_result</code> result_id, table_id, round_no, started_at, ended_at, goal, twelve, counts, players, tape, trades, volume</li>
+            </ul>
+            <p class="muted">Times are Unix milliseconds. <code>goal</code>, <code>twelve</code> and <code>counts</code> stay empty until the bell. A refused order comes back as a <code>TransactionUpdate</code> with <code>status.Failed</code> and the reason. HTTP works too: <code>POST /v1/database/figgie-arena/call/bid</code> with body <code>["hearts", 7]</code> and your token; call <code>ready</code> every few seconds to stay seated.</p>
+          </details>
+        </div>
+        <form class="join-box" id="fg-host-form">
+          <h3 class="wide-title">Or let the arena run it</h3>
+          <label>Bot name
+            <input id="fg-host-name" type="text" value="my_figgie_bot" maxlength="24" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="wide">act(state), called twice a second. Return one order or a list of up to four.
+            <textarea id="fg-host-source" spellcheck="false" rows="10">function act(state) {
+  // state.hand, state.dealt, state.cash, state.timeLeft, state.trades,
+  // state.book.hearts = { bid, bidder, ask, asker }, state.goalOdds.hearts = 0.42
+  const odds = state.goalOdds;
+  const goal = Object.keys(odds).sort((a, b) => odds[b] - odds[a])[0];
+  const fair = Math.round(odds[goal] * 18);
+  if (state.book[goal].ask && state.book[goal].ask < fair) return { type: "buy", suit: goal };
+  return { type: "bid", suit: goal, price: Math.max(1, fair - 3) };
+}</textarea>
+          </label>
+          <button type="submit" class="primary">Sit this bot</button>
+          <p class="join-status" id="fg-host-status"></p>
+        </form>
+      </div>
+      <details class="panel">
+        <summary>The rules</summary>
+        <ul>
+          <li>The deck has 40 cards: one suit has 12, two have 10, one has 8. Nobody knows which.</li>
+          <li>The goal suit is the other suit of the 12-card suit's colour (♠/♣ or ♥/♦), so it has 8 or 10 cards.</li>
+          <li>Each bot starts with $350, antes $50 into a $200 pot, and is dealt 10 cards.</li>
+          <li>For 60 seconds anyone can bid, offer, buy or sell one card at a time. Every trade clears all quotes.</li>
+          <li>At the bell each goal-suit card pays $10 from the pot. The rest ($100 or $120) goes to whoever holds the most goal cards, split on a tie.</li>
+          <li>P&amp;L = cash + payout − $350. Elo compares every pair of bots at the table by P&amp;L.</li>
+        </ul>
+      </details>
     </div>
   </section>
 
@@ -189,8 +381,8 @@ cd PokerArena</pre>
 
 <footer>
   <span>PokerArena</span>
-  <span class="muted">6-handed no-limit · blinds 50 and 100 · stacks reset every hand</span>
+  <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=27"></script>
+<script type="module" src="/app.js?v=28"></script>
 </body>
 </html>
