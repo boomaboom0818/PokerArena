@@ -2,7 +2,7 @@
 // WebSocket protocol a bot uses, so what you see is exactly what the bots see
 // (plus the hands, which are published at the bell).
 
-import { HOST as HTTP_HOST } from "./stdb.js?v=6";
+import { HOST as HTTP_HOST } from "./stdb.js?v=7";
 const WS_HOST = HTTP_HOST.replace(/^https:/, "wss:");
 const DB = "figgie-arena";
 const PROTOCOL = "v1.json.spacetimedb";
@@ -16,7 +16,7 @@ const POT = 200;
 
 // Initial rows arrive as objects, later updates as arrays in column order.
 const COLUMNS = {
-  player: ["name", "owner", "kind", "elo", "rounds", "pnl", "pnl_sq", "bonuses", "tops", "trades",
+  player: ["name", "owner", "kind", "rounds", "pnl", "pnl_sq", "bonuses", "tops", "trades",
     "edge", "goal_cards", "rejects", "online", "last_seen", "joined_at", "table_id"],
   figgie_table: ["table_id", "round_no", "phase", "started_at", "ends_at", "next_at", "pot", "goal",
     "twelve", "counts", "names", "last_trade"],

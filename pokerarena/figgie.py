@@ -121,8 +121,7 @@ class State:
 # Column order of each table. Initial rows arrive as JSON objects, later updates as
 # positional JSON arrays in this order (tests check it against the module source).
 COLUMNS = {
-    # player.elo is a legacy column that is no longer updated; the leaderboard ranks by pnl.
-    "player": ["name", "owner", "kind", "elo", "rounds", "pnl", "pnl_sq", "bonuses", "tops", "trades",
+    "player": ["name", "owner", "kind", "rounds", "pnl", "pnl_sq", "bonuses", "tops", "trades",
                "edge", "goal_cards", "rejects", "online", "last_seen", "joined_at", "table_id"],
     "figgie_table": ["table_id", "round_no", "phase", "started_at", "ends_at", "next_at", "pot", "goal",
                      "twelve", "counts", "names", "last_trade"],

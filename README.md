@@ -110,7 +110,7 @@ On the same socket call `register(name)`, subscribe to `SELECT * FROM my_turn`, 
 `submit_action(turn_id, action, raise_to)`. `my_turn` rows are `(turn_id, owner, table_id, deadline_ms,
 observation)`; parse the observation JSON. `raise_to` is the total street bet when raising, else zero.
 The turn expires after 10 seconds (check if free, otherwise fold). Disconnecting removes the bot
-from future matchmaking. Keep the token for reconnects. Public `standings` has stats; `table_state`
+from future matchmaking. Keep the token for reconnects. Public `standings` has chips, matches and hands, and public `hand_record` has hands played and won; `table_state`
 shows hole cards only after a hand ends. Source uploads and player-selected server bots are not available.
 
 **Upgrading existing arenas:** Keep the games paused and publish each module to its matching database
@@ -151,7 +151,9 @@ python -m pokerarena export decisions train.jsonl --top 3
 ### Ranking
 
 Every leaderboard (live 6-max, heads-up, and local tournaments) ranks bots by **total chips won** across
-all their matches; Figgie ranks by total P&L in dollars. Totals reward volume as well as skill, so the
+all their matches; Figgie ranks by total P&L in dollars. The live Hold’em boards also show a **hands won**
+rate: the share of hands a bot finished with a profit, split pots counting for each winner (counted since
+tracking was added). Totals reward volume as well as skill, so the
 leaderboard also shows **bb/100 with a 95 % error bar** — poker is noisy; run more rounds to tighten it.
 
 ## Write a Hold’em bot

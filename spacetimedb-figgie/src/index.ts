@@ -37,7 +37,6 @@ const player = table({ name: 'player', public: true }, {
   name: t.string().primaryKey(),
   owner: t.identity().index(),
   kind: t.string(), // house | remote | hosted
-  elo: t.f64(), // legacy, frozen: the leaderboard ranks by total pnl
   rounds: t.u32(),
   pnl: t.f64(),
   pnlSq: t.f64(),
@@ -644,7 +643,7 @@ export const init = spacetimedb.init(ctx => {
   const now = nowMs(ctx);
   for (const name of HOUSE) {
     ctx.db.player.insert({
-      name, owner: Identity.zero(), kind: 'house', elo: 0, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
+      name, owner: Identity.zero(), kind: 'house', rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
       trades: 0, edge: 0, goalCards: 0, rejects: 0, online: true, lastSeen: now, joinedAt: now, tableId: -1,
     });
   }
@@ -693,7 +692,7 @@ export const register = spacetimedb.reducer({ name: t.string() }, (ctx, { name }
   }
   checkRegistration(ctx);
   ctx.db.player.insert({
-    name: safe, owner: ctx.sender, kind: 'remote', elo: 0, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
+    name: safe, owner: ctx.sender, kind: 'remote', rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
     trades: 0, edge: 0, goalCards: 0, rejects: 0, online: ctx.connectionId !== null, lastSeen: now, joinedAt: now, tableId: -1,
   });
 });

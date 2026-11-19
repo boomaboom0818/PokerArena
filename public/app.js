@@ -1,5 +1,5 @@
-import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=6";
-import { startFiggie, stopFiggie } from "./figgie.js?v=8";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=7";
+import { startFiggie, stopFiggie } from "./figgie.js?v=9";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -145,7 +145,7 @@ async function refreshLeaderboard() {
     leaderboard = data.bots || [];
   } catch (err) {
     leaderboard = [];
-    $("#lb tbody").innerHTML = `<tr><td colspan="11">Could not load rankings. ${esc(err.message)}</td></tr>`;
+    $("#lb tbody").innerHTML = `<tr><td colspan="12">Could not load rankings. ${esc(err.message)}</td></tr>`;
   }
   renderLeaderboard();
   if (!selectedBot && leaderboard[0]) selectBot(leaderboard[0].bot);
@@ -157,7 +157,7 @@ function renderLeaderboard() {
     .filter((r) => !q || r.bot.toLowerCase().includes(q))
     .slice()
     .sort((a, b) => {
-      const av = a[sortKey], bv = b[sortKey];
+      const av = a[sortKey] ?? -1, bv = b[sortKey] ?? -1;
       if (typeof av === "string") return av.localeCompare(bv) * sortDir;
       return (av - bv) * sortDir;
     });
@@ -167,6 +167,7 @@ function renderLeaderboard() {
       <td class="bot-name">${esc(r.bot)}</td>
       <td class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</td>
       <td>${r.matches}</td>
+      <td>${winRate(r)}</td>
       <td>${r.hands.toLocaleString()}</td>
       <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
       <td>${r.ci95.toFixed(1)}</td>
@@ -174,7 +175,7 @@ function renderLeaderboard() {
       <td>${r.pfr.toFixed(0)}</td>
       <td>${r.af.toFixed(1)}</td>
       <td>${r.match_wins}</td>
-    </tr>`).join("") || `<tr><td colspan="11">No bots yet. Run a tournament, then refresh.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="12">No bots yet. Run a tournament, then refresh.</td></tr>`;
   $$("#lb tbody tr[data-bot]").forEach((tr) => {
     tr.addEventListener("click", () => selectBot(tr.dataset.bot));
   });
@@ -212,6 +213,10 @@ async function selectBot(name) {
   } catch (err) {
     card.innerHTML = `<h2>${esc(name)}</h2><p>${esc(err.message)}</p>`;
   }
+}
+
+function winRate(r) {
+  return r.win_rate == null ? "—" : `${r.win_rate.toFixed(0)}%`;
 }
 
 function sparkline(values) {
@@ -268,11 +273,11 @@ async function loadHeadsUpBoard() {
     $("#hu-lb tbody").innerHTML = rows.map((r) => `
       <tr>
         <td>${r.rank}</td><td class="bot-name">${esc(r.bot)}</td><td class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</td>
-        <td>${r.matches}</td><td>${r.hands.toLocaleString()}</td>
+        <td>${r.matches}</td><td>${winRate(r)}</td><td>${r.hands.toLocaleString()}</td>
         <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
-      </tr>`).join("") || `<tr><td colspan="6">No heads-up matches yet.</td></tr>`;
+      </tr>`).join("") || `<tr><td colspan="7">No heads-up matches yet.</td></tr>`;
   } catch (err) {
-    $("#hu-lb tbody").innerHTML = `<tr><td colspan="6">${esc(err.message)}</td></tr>`;
+    $("#hu-lb tbody").innerHTML = `<tr><td colspan="7">${esc(err.message)}</td></tr>`;
   }
 }
 

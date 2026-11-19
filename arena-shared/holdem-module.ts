@@ -6,9 +6,11 @@ import { deal, act, observation, publicFrame, MATCH_HANDS, type Hand } from './h
 
 export function pokerArena(size: 2 | 6) {
   const houses = HOUSE.slice(0, size);
-  // Keep the old row shape for a non-destructive upgrade. Legacy `elo` and `source` are frozen and never read;
-  // standings rank by total chips won.
-  const bot = table({ name: 'bot' }, { name: t.string().primaryKey(), elo: t.f64(), matches: t.u32(), hands: t.u32(), chips: t.i64(), source: t.string() });
+  // Standings rank by total chips won. Legacy `source` is private and never read.
+  const bot = table({ name: 'bot' }, { name: t.string().primaryKey(), matches: t.u32(), hands: t.u32(), chips: t.i64(), source: t.string() });
+  // Hands won live in their own table so adding them did not change `bot` or `standings`. `played`
+  // counts hands since tracking began, so older hands do not dilute the win rate.
+  const handRecord = table({ name: 'hand_record', public: true }, { name: t.string().primaryKey(), played: t.u32(), won: t.u32() });
   const botOwner = table({ name: 'bot_owner' }, { name: t.string().primaryKey(), owner: t.identity().unique() });
   const online = table({ name: 'online' }, { name: t.string().primaryKey(), connection: t.string().unique() });
   const tableState = table({ name: 'table_state', public: true }, {
@@ -19,13 +21,13 @@ export function pokerArena(size: 2 | 6) {
   const tickTimer = table({ name: 'tick_timer' }, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt() });
   const active = table({ name: 'active_match' }, { tableId: t.u32().primaryKey(), state: t.string() });
   const turn = table({ name: 'turn' }, { turnId: t.string().primaryKey(), owner: t.identity().unique(), tableId: t.u32().unique(), deadlineMs: t.f64(), observation: t.string() });
-  const db = schema({ bot, botOwner, online, tableState, control, tickTimer, active, turn }, { env: { ARENA_ADMIN_ID: t.string(), POKER_DEAL_KEY: t.string() } });
+  const db = schema({ bot, handRecord, botOwner, online, tableState, control, tickTimer, active, turn }, { env: { ARENA_ADMIN_ID: t.string(), POKER_DEAL_KEY: t.string() } });
   type Ctx = ReducerCtx<InferSchema<typeof db>>;
   type Match = { hand: Hand; nets: number[] };
   const now = (ctx: Ctx) => Number(ctx.timestamp.microsSinceUnixEpoch / 1000n);
   const paused = (ctx: Ctx) => ctx.db.control.id.find(0)?.paused !== false;
   const admin = (ctx: Ctx) => ctx.sender.toHexString() === ctx.env.ARENA_ADMIN_ID;
-  const stats = (name: string) => ({ name, elo: 0, matches: 0, hands: 0, chips: 0n, source: '' });
+  const stats = (name: string) => ({ name, matches: 0, hands: 0, chips: 0n, source: '' });
   const standings = db.anonymousView({ public: true }, t.array(t.row('Standing', {
     name: t.string().primaryKey(), matches: t.u32(), hands: t.u32(), chips: t.i64(),
   })), ctx => [...ctx.db.bot.iter()].map(({ name, matches, hands, chips }) => ({ name, matches, hands, chips })));
@@ -43,6 +45,15 @@ export function pokerArena(size: 2 | 6) {
     });
   }
 
+  // A bot wins a hand when it ends the hand with more chips than it started with (split pots count for each winner).
+  function recordHand(ctx: Ctx, h: Hand) {
+    for (const s of h.seats) {
+      const rec = ctx.db.handRecord.name.find(s.name), won = s.stack > STACK ? 1 : 0;
+      if (rec) ctx.db.handRecord.name.update({ ...rec, played: rec.played+1, won: rec.won+won });
+      else ctx.db.handRecord.insert({ name: s.name, played: 1, won });
+    }
+  }
+
   // Advance to the next connected player's decision or the end of the current hand.
   function advance(ctx: Ctx, tableId: number, m: Match) {
     const h = m.hand;
@@ -57,6 +68,7 @@ export function pokerArena(size: 2 | 6) {
     }
     if (h.done) {
       h.seats.forEach((s,i) => { m.nets[i] += s.stack-STACK; });
+      recordHand(ctx, h);
       if (h.no === MATCH_HANDS) record(ctx,m);
     }
     const old = ctx.db.tableState.tableId.find(tableId);
@@ -141,6 +153,7 @@ export function pokerArena(size: 2 | 6) {
     if (houses.includes(name) || (!admin(ctx) && !ctx.db.botOwner.name.find(name)?.owner.isEqual(ctx.sender))) throw new SenderError('not your bot');
     for (const r of ctx.db.active.iter()) if ((JSON.parse(r.state) as Match).hand.seats.some(s => s.name === name)) throw new SenderError('disconnect and wait for the match to finish');
     ctx.db.online.name.delete(name); ctx.db.botOwner.name.delete(name); ctx.db.bot.name.delete(name);
+    ctx.db.handRecord.name.delete(name);
   });
   return { db, init, tick, register, disconnect, submitAction, setPaused, removeBot, standings, myTurn };
 }

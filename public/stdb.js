@@ -65,8 +65,15 @@ export async function liveTable(db = DB) {
 }
 
 export async function leaderboard(db = DB) {
-  const result = await sql("SELECT * FROM standings", db);
-  const bots = rows(result).map((b) => ({
+  const [result, records] = await Promise.all([
+    sql("SELECT * FROM standings", db),
+    sql("SELECT * FROM hand_record", db).catch(() => []),
+  ]);
+  const record = new Map(rows(records).map((r) => [r.name, r]));
+  const bots = rows(result).map((b) => {
+    const rec = record.get(b.name);
+    const played = rec ? Number(rec.played) : 0;
+    return {
     bot: b.name,
     chips: Number(b.chips),
     matches: b.matches,
@@ -78,8 +85,10 @@ export async function leaderboard(db = DB) {
     pfr: 0,
     af: 0,
     match_wins: 0,
+    // share of hands won since tracking began; null until the bot finishes one
+    win_rate: played ? Math.round(Number(rec.won) / played * 1000) / 10 : null,
     rank: 0,
-  })).sort((a, b) => b.chips - a.chips || a.bot.localeCompare(b.bot));
+  }; }).sort((a, b) => b.chips - a.chips || a.bot.localeCompare(b.bot));
   bots.forEach((b, i) => { b.rank = i + 1; });
   return { bots };
 }
