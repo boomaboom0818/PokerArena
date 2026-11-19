@@ -440,3 +440,19 @@ table.fg-results tr { cursor: default; }
   #hand-list, #fg-rounds { max-height: 340px; }
   #replay-script { max-height: 220px; }
 }
+
+/* Connect tab: one block per game */
+.cn-jump { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+.cn-jump button {
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  padding: 8px 16px; cursor: pointer; color: inherit; font: inherit;
+}
+.cn-jump button:hover { border-color: var(--gold); }
+#connect .rankings-block { scroll-margin-top: 80px; }
+#connect .rankings-block > .join-box, #connect .rankings-block > details { margin-top: 14px; }
+.cn-server {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 20px;
+  margin: 12px 0 0; padding: 12px 14px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px;
+}
+.cn-server dt { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.cn-server dd { margin: 2px 0 0; overflow-wrap: anywhere; }

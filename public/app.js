@@ -1,5 +1,5 @@
 import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js";
-import { startFiggie, stopFiggie } from "./figgie.js?v=1";
+import { startFiggie, stopFiggie, bindFiggieConnect } from "./figgie.js?v=2";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -569,34 +569,45 @@ function refreshJoin() {
   $("#join-cmd").textContent = "python -m pokerarena join " + name + ".py";
 }
 
+function bindPokerForm(prefix, db, after) {
+  const form = $("#" + prefix + "join-form");
+  const nameBox = $("#" + prefix + "bot-name");
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const name = botSlug(nameBox.value);
+    nameBox.value = name;
+    refreshJoin();
+    const status = $("#" + prefix + "join-status");
+    status.textContent = "Sitting " + name + "…";
+    try {
+      const res = await fetch(`https://maincloud.spacetimedb.com/v1/database/${db}/call/connect_bot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([name, $("#" + prefix + "bot-source").value]),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text.slice(0, 180) || "the table refused the bot");
+      }
+      status.textContent = name + " is in. The next match seats them.";
+      if (after) after();
+    } catch (err) {
+      status.textContent = err.message;
+    }
+  });
+}
+
 async function loadConnect() {
   const form = $("#join-form");
   if (!form.dataset.bound) {
     form.dataset.bound = "1";
     $("#bot-name").addEventListener("input", refreshJoin);
-    form.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const name = botSlug($("#bot-name").value);
-      $("#bot-name").value = name;
-      refreshJoin();
-      const status = $("#join-status");
-      status.textContent = "Sitting " + name + "…";
-      try {
-        const res = await fetch("https://maincloud.spacetimedb.com/v1/database/poker-arena/call/connect_bot", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify([name, $("#bot-source").value]),
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text.slice(0, 180) || "the table refused the bot");
-        }
-        status.textContent = name + " is in. The next match seats them. Scroll up to watch.";
-        refreshLeaderboard();
-      } catch (err) {
-        status.textContent = err.message;
-      }
-    });
+    bindPokerForm("", "poker-arena", refreshLeaderboard);
+    bindPokerForm("hu-", "poker-heads-up");
+    bindFiggieConnect();
+    $$("[data-jump]").forEach((b) => b.addEventListener("click", () => {
+      $("#" + b.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
     $$(".copy").forEach((btn) => btn.addEventListener("click", async () => {
       const text = $("#" + btn.dataset.copy).textContent;
       try {

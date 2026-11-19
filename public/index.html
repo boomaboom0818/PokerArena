@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=23">
+<link rel="stylesheet" href="/styles.css?v=24">
 </head>
 <body>
 <header class="top">
@@ -243,9 +243,120 @@
       </div>
     </div>
 
-    <div class="rankings-block" id="fg-connect">
-      <div class="hero"><div><h2>Connect a Figgie bot</h2>
-        <p class="muted">Your bot opens one WebSocket, claims a name, and trades. It sits down at the next deal and plays every round while it stays connected.</p></div></div>
+    <div class="rankings-block" id="fg-rules">
+      <details class="panel">
+        <summary>The rules</summary>
+        <ul>
+          <li>The deck has 40 cards: one suit has 12, two have 10, one has 8. Nobody knows which.</li>
+          <li>The goal suit is the other suit of the 12-card suit's colour (♠/♣ or ♥/♦), so it has 8 or 10 cards.</li>
+          <li>Each bot starts with $350, antes $50 into a $200 pot, and is dealt 10 cards.</li>
+          <li>For 60 seconds anyone can bid, offer, buy or sell one card at a time. Every trade clears all quotes.</li>
+          <li>At the bell each goal-suit card pays $10 from the pot. The rest ($100 or $120) goes to whoever holds the most goal cards, split on a tie.</li>
+          <li>P&amp;L = cash + payout − $350. Elo compares every pair of bots at the table by P&amp;L.</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <section id="connect" class="view" hidden>
+    <div class="section-head">
+      <div>
+        <h1>Connect a bot</h1>
+        <p class="lede">Three games run side by side, each on its own SpacetimeDB database. Pick one below to see how to get a bot in.</p>
+      </div>
+    </div>
+    <div class="cn-jump">
+      <button type="button" data-jump="cn-6max">6-max hold'em</button>
+      <button type="button" data-jump="cn-hu">Heads-up hold'em</button>
+      <button type="button" data-jump="cn-figgie">Figgie</button>
+    </div>
+
+    <div class="rankings-block" id="cn-6max">
+      <div class="hero"><div><h2>6-max hold'em</h2>
+        <p class="muted">Paste a function named <code>act</code>. The live table calls it on every decision, and the bot shows up in the 6-max rankings.</p></div></div>
+      <dl class="cn-server"><div><dt>Host</dt><dd><code>wss://maincloud.spacetimedb.com</code></dd></div><div><dt>Database</dt><dd><code>poker-arena</code></dd></div><div><dt>Reducer</dt><dd><code>connect_bot(name, source)</code></dd></div><div><dt>Language</dt><dd>JavaScript</dd></div></dl>
+    <form class="join-box" id="join-form">
+      <label>Bot name
+        <input id="bot-name" type="text" value="my_bot" maxlength="24" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="wide">act(obs)
+        <textarea id="bot-source" spellcheck="false" rows="8">function act(obs) {
+  if (obs.canCheck) return "check";
+  if (obs.toCall <= obs.bigBlind) return "call";
+  return "fold";
+}</textarea>
+      </label>
+      <button type="submit" class="primary">Sit this bot</button>
+      <p class="join-status" id="join-status"></p>
+    </form>
+    <details class="panel">
+      <summary>Or send it from code</summary>
+      <p class="muted">One HTTP call. No account or token needed. The body is the bot name and the source of <code>act</code>.</p>
+      <pre class="code" id="cn6-curl">curl -X POST https://maincloud.spacetimedb.com/v1/database/poker-arena/call/connect_bot \
+  -H "Content-Type: application/json" \
+  -d '["my_bot", "function act(obs) { return obs.canCheck ? \"check\" : \"fold\"; }"]'</pre>
+      <button type="button" class="copy" data-copy="cn6-curl">Copy</button>
+    </details>
+    <details class="panel">
+      <summary>Or run it from your own machine</summary>
+    <ol class="join-steps">
+      <li>
+        <strong>Get the arena</strong>
+        <pre class="code" id="clone-cmd">git clone https://github.com/boomaboom0818/PokerArena.git
+cd PokerArena</pre>
+        <button type="button" class="copy" data-copy="clone-cmd">Copy</button>
+      </li>
+      <li>
+        <strong>Put the downloaded file in that folder</strong>
+        <p class="muted">Open it and change <code>act</code>. Check if you can, call a small bet, otherwise fold.</p>
+      </li>
+      <li>
+        <strong>Sit it at a table</strong>
+        <pre class="code" id="join-cmd">python -m pokerarena join my_bot.py</pre>
+        <button type="button" class="copy" data-copy="join-cmd">Copy</button>
+        <p class="muted">Then <code>python -m pokerarena serve</code> and open the rankings.</p>
+      </li>
+    </ol>
+    </details>
+    <details class="panel">
+      <summary>What <code>act</code> can see</summary>
+      <ul id="obs-list"></ul>
+      <p class="muted" id="safety"></p>
+    </details>
+    </div>
+
+    <div class="rankings-block" id="cn-hu">
+      <div class="hero"><div><h2>Heads-up hold'em</h2>
+        <p class="muted">Same <code>act</code> function and same observation, but your bot plays one opponent at a time on its own database and leaderboard.</p></div></div>
+      <dl class="cn-server"><div><dt>Host</dt><dd><code>wss://maincloud.spacetimedb.com</code></dd></div><div><dt>Database</dt><dd><code>poker-heads-up</code></dd></div><div><dt>Reducer</dt><dd><code>connect_bot(name, source)</code></dd></div><div><dt>Language</dt><dd>JavaScript</dd></div></dl>
+    <form class="join-box" id="hu-join-form">
+      <label>Bot name
+        <input id="hu-bot-name" type="text" value="my_bot" maxlength="24" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="wide">act(obs)
+        <textarea id="hu-bot-source" spellcheck="false" rows="8">function act(obs) {
+  if (obs.canCheck) return "check";
+  if (obs.toCall <= obs.bigBlind) return "call";
+  return "fold";
+}</textarea>
+      </label>
+      <button type="submit" class="primary">Sit this bot</button>
+      <p class="join-status" id="hu-join-status"></p>
+    </form>
+    <details class="panel">
+      <summary>Or send it from code</summary>
+      <p class="muted">One HTTP call. No account or token needed. The body is the bot name and the source of <code>act</code>.</p>
+      <pre class="code" id="cnhu-curl">curl -X POST https://maincloud.spacetimedb.com/v1/database/poker-heads-up/call/connect_bot \
+  -H "Content-Type: application/json" \
+  -d '["my_bot", "function act(obs) { return obs.canCheck ? \"check\" : \"fold\"; }"]'</pre>
+      <button type="button" class="copy" data-copy="cnhu-curl">Copy</button>
+    </details>
+    </div>
+
+    <div class="rankings-block" id="cn-figgie">
+      <div class="hero"><div><h2>Figgie</h2>
+        <p class="muted">Your bot opens one WebSocket, claims a name, and trades. It sits down at the next deal and plays every round while it stays connected. Or paste an <code>act(state)</code> function and let the arena run it.</p></div></div>
+      <dl class="cn-server"><div><dt>Host</dt><dd><code>wss://maincloud.spacetimedb.com</code></dd></div><div><dt>Database</dt><dd><code>figgie-arena</code></dd></div><div><dt>WebSocket</dt><dd><code>/v1/database/figgie-arena/subscribe</code></dd></div><div><dt>Subprotocol</dt><dd><code>v1.json.spacetimedb</code></dd></div><div><dt>Reducers</dt><dd><code>register, bid, ask, buy, sell, cancel, host_bot</code></dd></div></dl>
       <div class="fg-connect">
         <div class="panel">
           <h3>Python, no installs</h3>
@@ -313,67 +424,7 @@ ws.onmessage = (e) => {
           <p class="join-status" id="fg-host-status"></p>
         </form>
       </div>
-      <details class="panel">
-        <summary>The rules</summary>
-        <ul>
-          <li>The deck has 40 cards: one suit has 12, two have 10, one has 8. Nobody knows which.</li>
-          <li>The goal suit is the other suit of the 12-card suit's colour (♠/♣ or ♥/♦), so it has 8 or 10 cards.</li>
-          <li>Each bot starts with $350, antes $50 into a $200 pot, and is dealt 10 cards.</li>
-          <li>For 60 seconds anyone can bid, offer, buy or sell one card at a time. Every trade clears all quotes.</li>
-          <li>At the bell each goal-suit card pays $10 from the pot. The rest ($100 or $120) goes to whoever holds the most goal cards, split on a tie.</li>
-          <li>P&amp;L = cash + payout − $350. Elo compares every pair of bots at the table by P&amp;L.</li>
-        </ul>
-      </details>
     </div>
-  </section>
-
-  <section id="connect" class="view" hidden>
-    <div class="section-head">
-      <div>
-        <h1>Connect a bot</h1>
-        <p class="lede">Paste a function named <code>act</code>. The live tables call it on every decision, and the bot shows up in the rankings under the game.</p>
-      </div>
-    </div>
-    <form class="join-box" id="join-form">
-      <label>Bot name
-        <input id="bot-name" type="text" value="my_bot" maxlength="24" autocomplete="off" spellcheck="false">
-      </label>
-      <label class="wide">act(obs)
-        <textarea id="bot-source" spellcheck="false" rows="8">function act(obs) {
-  if (obs.canCheck) return "check";
-  if (obs.toCall <= obs.bigBlind) return "call";
-  return "fold";
-}</textarea>
-      </label>
-      <button type="submit" class="primary">Sit this bot</button>
-      <p class="join-status" id="join-status"></p>
-    </form>
-    <details class="panel">
-      <summary>Or run it from your own machine</summary>
-    <ol class="join-steps">
-      <li>
-        <strong>Get the arena</strong>
-        <pre class="code" id="clone-cmd">git clone https://github.com/boomaboom0818/PokerArena.git
-cd PokerArena</pre>
-        <button type="button" class="copy" data-copy="clone-cmd">Copy</button>
-      </li>
-      <li>
-        <strong>Put the downloaded file in that folder</strong>
-        <p class="muted">Open it and change <code>act</code>. Check if you can, call a small bet, otherwise fold.</p>
-      </li>
-      <li>
-        <strong>Sit it at a table</strong>
-        <pre class="code" id="join-cmd">python -m pokerarena join my_bot.py</pre>
-        <button type="button" class="copy" data-copy="join-cmd">Copy</button>
-        <p class="muted">Then <code>python -m pokerarena serve</code> and open the rankings.</p>
-      </li>
-    </ol>
-    </details>
-    <details class="panel">
-      <summary>What <code>act</code> can see</summary>
-      <ul id="obs-list"></ul>
-      <p class="muted" id="safety"></p>
-    </details>
   </section>
 </main>
 
@@ -381,6 +432,6 @@ cd PokerArena</pre>
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=29"></script>
+<script type="module" src="/app.js?v=30"></script>
 </body>
 </html>

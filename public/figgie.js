@@ -682,15 +682,9 @@ function bindOnce() {
   $("#fg-replay-prev").addEventListener("click", () => { stopReplay(); showReplay(fg.replay.index - 1); });
   $("#fg-replay-next").addEventListener("click", () => { stopReplay(); showReplay(fg.replay.index + 1); });
   $("#fg-replay-scrub").addEventListener("input", (ev) => { stopReplay(); showReplay(Number(ev.target.value)); });
-  $$("#figgie .copy").forEach((btn) => btn.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText($("#" + btn.dataset.copy).textContent);
-      btn.textContent = "Copied";
-      setTimeout(() => { btn.textContent = "Copy"; }, 1200);
-    } catch (err) {
-      btn.textContent = "Select the text";
-    }
-  }));
+}
+
+export function bindFiggieConnect() {
   $("#fg-ws-url").textContent = `${WS_HOST}/v1/database/${DB}/subscribe`;
   $("#fg-host-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
