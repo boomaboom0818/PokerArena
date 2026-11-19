@@ -2,10 +2,9 @@
 // WebSocket protocol a bot uses, so what you see is exactly what the bots see
 // (plus the hands, which are published at the bell).
 
-const params = new URLSearchParams(location.search);
-const WS_HOST = (params.get("figgie") || "wss://maincloud.spacetimedb.com").replace(/\/$/, "");
-const HTTP_HOST = WS_HOST.replace(/^ws/, "http");
-const DB = params.get("figgie_db") || "figgie-arena";
+import { HOST as HTTP_HOST } from "./stdb.js?v=3";
+const WS_HOST = HTTP_HOST.replace(/^https:/, "wss:");
+const DB = "figgie-arena";
 const PROTOCOL = "v1.json.spacetimedb";
 
 const SUITS = ["spades", "clubs", "hearts", "diamonds"];
@@ -31,7 +30,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const money = (n) => (n > 0 ? "+" : n < 0 ? "−" : "") + "$" + Math.abs(Math.round(n)).toLocaleString();
-const suitTag = (s, extra = "") => `<span class="sg sg-${s}${extra}" title="${s}">${GLYPH[s]}</span>`;
+const suitTag = (s, extra = "") => SUITS.includes(s) ? `<span class="sg sg-${s}${extra}" title="${s}">${GLYPH[s]}</span>` : "?";
 
 const fg = {
   ws: null,
@@ -161,12 +160,21 @@ async function loadResults(extra = 40) {
   const tables = all("figgie_table");
   const top = Math.max(0, ...tables.map((t) => t.round_no));
   const rows = await sql(`SELECT * FROM round_result WHERE round_no >= ${Math.max(0, top - extra)}`);
-  rows.forEach((r) => {
-    r.playersParsed = JSON.parse(r.players || "[]");
-    r.tapeParsed = JSON.parse(r.tape || "[]");
-  });
-  rows.sort((a, b) => b.round_no - a.round_no || a.table_id - b.table_id);
-  return rows;
+  // Replays contain historical JSON strings rather than typed database columns.
+  // Validate before interpolating counts into HTML or expanding the trade tape.
+  const counts = h => Array.isArray(h) && h.length === 4 && h.every(n => Number.isInteger(n) && n >= 0 && n <= 12);
+  const numeric = ['cash', 'goalCards', 'bonus', 'payout', 'pnl', 'edge', 'buys', 'sells', 'eloBefore', 'eloAfter'];
+  return rows.filter(r => {
+    try {
+      r.playersParsed = JSON.parse(r.players);
+      r.tapeParsed = JSON.parse(r.tape);
+      return SUITS.includes(r.goal) && SUITS.includes(r.twelve) &&
+        Array.isArray(r.playersParsed) && r.playersParsed.length === 4 && r.playersParsed.every(p =>
+          typeof p.name === 'string' && typeof p.kind === 'string' && counts(p.start) && counts(p.end) && numeric.every(k => Number.isFinite(p[k]))) &&
+        Array.isArray(r.tapeParsed) && r.tapeParsed.length <= 3600 && r.tapeParsed.every(t => Array.isArray(t) &&
+          Number.isFinite(t[0]) && SUITS.includes(t[1]) && Number.isInteger(t[2]) && t[2] > 0 && t[2] <= 400 && typeof t[3] === 'string' && typeof t[4] === 'string');
+    } catch { return false; }
+  }).sort((a, b) => b.round_no - a.round_no || a.table_id - b.table_id);
 }
 
 async function refreshResults() {
@@ -300,7 +308,7 @@ function renderFelt() {
     }).join("");
     const pnl = r ? `<div class="fg-pnl ${r.pnl >= 0 ? "up" : "down"}">${money(r.pnl)}${r.bonus ? ` <span class="fg-bonus">bonus</span>` : ""}</div>` : "";
     const quoteLine = r ? `<div class="fg-quotes muted">${r.goalCards} goal · payout $${r.payout} · edge ${money(r.edge)}</div>`
-      : `<div class="fg-quotes">${mine.map((q) => `<span class="q-${q.side}">${q.side === "bid" ? "bid" : "ask"} ${GLYPH[q.suit]} ${q.price}</span>`).join("") || '<span class="muted">no quotes</span>'}</div>`;
+      : `<div class="fg-quotes">${mine.map((q) => `<span class="q-${q.side === "bid" ? "bid" : "ask"}">${q.side === "bid" ? "bid" : "ask"} ${GLYPH[q.suit]} ${q.price}</span>`).join("") || '<span class="muted">no quotes</span>'}</div>`;
     return `<div class="fg-seat fg-${pos[i] || "n"}" data-bot="${esc(s.name)}">
       <div class="fg-seat-head"><span class="who">${esc(s.name)}</span><span class="kind kind-${esc(s.kind)}">${s.kind === "remote" ? "live" : esc(s.kind)}</span></div>
       <div class="fg-money"><span>$${s.cash}</span><span class="muted">${s.cards} cards · ${s.buys}B ${s.sells}S</span></div>
@@ -309,7 +317,7 @@ function renderFelt() {
     </div>`;
   }).join("");
   const goalBox = goal
-    ? `<div class="fg-goal revealed">Goal ${suitTag(goal)} <span>${goal}</span></div>
+    ? `<div class="fg-goal revealed">Goal ${suitTag(goal)} <span>${esc(goal)}</span></div>
        <div class="fg-counts">${SUITS.map((x, k) => `<span class="${x === goal ? "goal" : ""}">${GLYPH[x]} ${counts ? counts[k] : "?"}</span>`).join("")}</div>`
     : `<div class="fg-goal">Goal suit <span class="muted">hidden</span></div><div class="fg-counts muted">12 · 10 · 10 · 8, order unknown</div>`;
   root.innerHTML = `${seatHtml}
@@ -356,7 +364,7 @@ function renderBook() {
 function renderChart(svg, tape, opts = {}) {
   if (!svg) return;
   const W = 640, H = 220, L = 34, R = 10, T = 12, B = 24;
-  const maxP = Math.max(20, ...tape.map((t) => t[2])) * 1.1;
+  const maxP = Math.min(400, Math.max(20, ...tape.map((t) => Number(t[2]) || 0))) * 1.1;
   const x = (ms) => L + (Math.max(0, Math.min(ROUND_S * 1000, ms)) / (ROUND_S * 1000)) * (W - L - R);
   const y = (p) => T + (1 - p / maxP) * (H - T - B);
   const grid = [];
@@ -370,7 +378,7 @@ function renderChart(svg, tape, opts = {}) {
     if (!pts.length) return "";
     const dim = opts.goal && opts.goal !== suit ? " dim" : "";
     const path = pts.map((t, i) => `${i ? "L" : "M"}${x(t[0]).toFixed(1)},${y(t[2]).toFixed(1)}`).join("");
-    const dots = pts.map((t) => `<circle cx="${x(t[0]).toFixed(1)}" cy="${y(t[2]).toFixed(1)}" r="3.2" fill="${SUIT_COLOR[suit]}"><title>${GLYPH[suit]} $${t[2]} · ${esc(t[3])} from ${esc(t[4])}</title></circle>`).join("");
+    const dots = pts.map((t) => `<circle cx="${x(t[0]).toFixed(1)}" cy="${y(t[2]).toFixed(1)}" r="3.2" fill="${SUIT_COLOR[suit]}"><title>${GLYPH[suit]} $${Number(t[2])} · ${esc(t[3])} from ${esc(t[4])}</title></circle>`).join("");
     return `<g class="series${dim}"><path d="${path}" stroke="${SUIT_COLOR[suit]}" fill="none" stroke-width="1.6"/>${dots}</g>`;
   }).join("");
   const now = opts.nowMs != null ? `<line x1="${x(opts.nowMs)}" x2="${x(opts.nowMs)}" y1="${T}" y2="${H - B}" class="now"/>` : "";
@@ -395,7 +403,7 @@ function renderTape() {
 function resultTable(r) {
   const goal = r.goal;
   const counts = r.counts.split(",").map(Number);
-  const head = `<p class="fg-result-head">Round ${r.round_no} · table ${r.table_id + 1} · goal ${suitTag(goal)} <b>${goal}</b> (${counts[SUITS.indexOf(goal)]} cards) · 12-card suit ${suitTag(r.twelve)} · ${r.trades} trades</p>`;
+  const head = `<p class="fg-result-head">Round ${r.round_no} · table ${r.table_id + 1} · goal ${suitTag(goal)} <b>${esc(goal)}</b> (${counts[SUITS.indexOf(goal)]} cards) · 12-card suit ${suitTag(r.twelve)} · ${r.trades} trades</p>`;
   const rows = r.playersParsed.slice().sort((a, b) => b.pnl - a.pnl).map((p) => `
     <tr>
       <td class="bot-name">${esc(p.name)} <span class="kind kind-${esc(p.kind)}">${p.kind === "remote" ? "live" : esc(p.kind)}</span></td>
@@ -642,17 +650,6 @@ function spark(values) {
 
 // ---------------------------------------------------------------- hosting
 
-async function identityToken() {
-  try {
-    const saved = localStorage.getItem("figgie-token");
-    if (saved) return saved;
-  } catch (err) { /* storage blocked */ }
-  const res = await fetch(`${HTTP_HOST}/v1/identity`, { method: "POST" });
-  const data = await res.json();
-  try { localStorage.setItem("figgie-token", data.token); } catch (err) { /* storage blocked */ }
-  return data.token;
-}
-
 function bindOnce() {
   const root = $("#figgie");
   if (root.dataset.bound) return;
@@ -682,29 +679,6 @@ function bindOnce() {
   $("#fg-replay-prev").addEventListener("click", () => { stopReplay(); showReplay(fg.replay.index - 1); });
   $("#fg-replay-next").addEventListener("click", () => { stopReplay(); showReplay(fg.replay.index + 1); });
   $("#fg-replay-scrub").addEventListener("input", (ev) => { stopReplay(); showReplay(Number(ev.target.value)); });
-}
-
-export function bindFiggieConnect() {
-  $("#fg-ws-url").textContent = `${WS_HOST}/v1/database/${DB}/subscribe`;
-  $("#fg-host-form").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const status = $("#fg-host-status");
-    const name = $("#fg-host-name").value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24);
-    $("#fg-host-name").value = name;
-    status.textContent = `Sitting ${name}…`;
-    try {
-      const token = await identityToken();
-      const res = await fetch(`${HTTP_HOST}/v1/database/${DB}/call/host_bot`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify([name, $("#fg-host-source").value]),
-      });
-      if (!res.ok) throw new Error((await res.text()).slice(0, 200) || "the arena refused the bot");
-      status.textContent = `${name} is in. It sits down at the next deal.`;
-    } catch (err) {
-      status.textContent = err.message;
-    }
-  });
 }
 
 export function startFiggie() {

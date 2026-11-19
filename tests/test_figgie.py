@@ -1,12 +1,17 @@
 """Figgie client checks. Nothing here needs the network."""
 
 import json
+import base64
+import hashlib
+import os
 import re
 import socket
 import struct
+import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from pokerarena import figgie
 from pokerarena.figgie import COLUMNS, Cache, SUITS, build_state, goal_odds, starter_source
@@ -127,7 +132,7 @@ class FrameTests(unittest.TestCase):
         ws, server = self.pair()
         text = json.dumps({"x": "y" * 300}).encode()
         server.sendall(bytes([0x89, 2]) + b"hi")  # ping
-        server.sendall(bytes([0x01, 126]) + struct.pack("!H", 100) + text[:100])  # first fragment
+        server.sendall(bytes([0x01, 100]) + text[:100])  # first fragment
         server.sendall(bytes([0x80, 126]) + struct.pack("!H", len(text) - 100) + text[100:])  # continuation
         self.assertEqual(ws.recv(), text.decode())
         pong = server.recv(64)
@@ -141,6 +146,58 @@ class FrameTests(unittest.TestCase):
         self.assertTrue(raw[1] & 0x80)
         mask, body = raw[2:6], raw[6:6 + (raw[1] & 0x7F)]
         self.assertEqual(bytes(b ^ mask[i & 3] for i, b in enumerate(body)), b"hello")
+
+    def test_oversized_fragmented_message_rejected_before_reading_body(self):
+        ws, server = self.pair()
+        server.sendall(b'\x01\x01x' + b'\x80\x7f' + struct.pack('!Q', figgie.MAX_MESSAGE))
+        with self.assertRaisesRegex(ConnectionError, 'oversized'):
+            ws.recv()
+
+    def test_upgrade_requires_correct_challenge_and_subprotocol(self):
+        for wrong in ('', 'accept', 'protocol'):
+            with self.subTest(wrong=wrong):
+                ws, peer = self.pair()
+
+                def respond():
+                    head = b''
+                    while b'\r\n\r\n' not in head:
+                        head += peer.recv(4096)
+                    key = re.search(b'Sec-WebSocket-Key: (.*?)\r\n', head)[1]
+                    accept = base64.b64encode(hashlib.sha1(key + b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest())
+                    peer.sendall(b'HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n'
+                                 + b'Sec-WebSocket-Accept: ' + (b'wrong' if wrong == 'accept' else accept)
+                                 + b'\r\nSec-WebSocket-Protocol: ' + (b'other' if wrong == 'protocol' else figgie.PROTOCOL.encode())
+                                 + b'\r\n\r\n\x81\x02ok')
+
+                thread = threading.Thread(target=respond, daemon=True)
+                thread.start()
+                if wrong:
+                    with self.assertRaises(ConnectionError):
+                        ws._upgrade('/', 'localhost', figgie.PROTOCOL, None, 2)
+                else:
+                    ws._upgrade('/', 'localhost', figgie.PROTOCOL, None, 2)
+                    self.assertEqual(ws.recv(), 'ok')
+                thread.join(2)
+
+
+class CredentialTests(unittest.TestCase):
+    def test_cleartext_remote_rejected_before_dial(self):
+        with patch.object(socket, 'create_connection') as connect:
+            with self.assertRaisesRegex(ValueError, 'wss'):
+                figgie.WebSocket('ws://arena.example/', figgie.PROTOCOL, 'test-token')
+            connect.assert_not_called()
+
+    def test_identity_files_are_scoped_and_private_on_create_and_replace(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, POKERARENA_HOME=tmp):
+            path = figgie.token_path('player')
+            self.assertNotEqual(path, figgie.token_path('player', 'wss://other.example'))
+            self.assertNotEqual(path, figgie.token_path('player', database='other'))
+            figgie.save_token(path, 'one')
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            path.chmod(0o644)
+            figgie.save_token(path, 'two')
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(path.read_text(), 'two')
 
 
 class StarterTests(unittest.TestCase):

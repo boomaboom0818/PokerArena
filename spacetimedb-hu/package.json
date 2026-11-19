@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@pokerarena/shared": "file:../arena-shared",
     "spacetimedb": "2.15.*"
   },
   "devDependencies": {

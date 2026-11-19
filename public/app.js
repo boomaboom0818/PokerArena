@@ -1,11 +1,10 @@
-import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js";
-import { startFiggie, stopFiggie, bindFiggieConnect } from "./figgie.js?v=2";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js?v=3";
+import { startFiggie, stopFiggie } from "./figgie.js?v=4";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-const params = new URLSearchParams(location.search);
-const API = (params.get("api") || window.POKERARENA_API || "").replace(/\/$/, "");
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const BUILTINS = ["tag", "lag", "nit", "equity", "equity_lag", "rock", "calling_station", "maniac", "random"];
 const SEAT_POS = {
@@ -23,7 +22,7 @@ let replay = { frames: [], index: 0, timer: null, id: null };
 const showHoles = true;
 
 function api(path, opts) {
-  return fetch(API + path, opts).then(async (res) => {
+  return fetch(path, opts).then(async (res) => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
@@ -53,7 +52,7 @@ function route() {
   $$(".view").forEach((v) => { v.hidden = v.id !== name; });
   $$("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name));
   window.scrollTo(0, 0);
-  if (name === "connect" && !$("#join-form").dataset.bound) loadConnect();
+  if (name === "connect") bindConnect();
   if (name === "home") startBroadcast();
   else stopBroadcast();
   if (name === "heads-up") startHeadsUp();
@@ -108,7 +107,7 @@ async function refreshLeaderboard() {
     leaderboard = data.bots || [];
   } catch (err) {
     leaderboard = [];
-    $("#lb tbody").innerHTML = `<tr><td colspan="11">Could not load rankings. ${err.message}</td></tr>`;
+    $("#lb tbody").innerHTML = `<tr><td colspan="11">Could not load rankings. ${esc(err.message)}</td></tr>`;
   }
   renderLeaderboard();
   if (!selectedBot && leaderboard[0]) selectBot(leaderboard[0].bot);
@@ -125,9 +124,9 @@ function renderLeaderboard() {
       return (av - bv) * sortDir;
     });
   $("#lb tbody").innerHTML = rows.map((r) => `
-    <tr data-bot="${r.bot}" class="${r.bot === selectedBot ? "selected" : ""}">
+    <tr data-bot="${esc(r.bot)}" class="${r.bot === selectedBot ? "selected" : ""}">
       <td>${r.rank}</td>
-      <td class="bot-name">${r.bot}</td>
+      <td class="bot-name">${esc(r.bot)}</td>
       <td>${Math.round(r.elo)}</td>
       <td>${r.matches}</td>
       <td>${r.hands.toLocaleString()}</td>
@@ -152,17 +151,17 @@ async function selectBot(name) {
   renderLeaderboard();
   const card = $("#bot-card");
   card.dataset.ready = "";
-  card.innerHTML = `<h2>${name}</h2><p class="muted">Loading…</p>`;
+  card.innerHTML = `<h2>${esc(name)}</h2><p class="muted">Loading…</p>`;
   try {
     const d = await api("/api/bots/" + encodeURIComponent(name));
     const hist = d.history || [];
     card.innerHTML = `
-      <h2>${d.bot}</h2>
-      <p><b>${Math.round(d.elo)}</b> Elo · ${d.matches} matches · ${d.hands.toLocaleString()} hands</p>
+      <h2>${esc(d.bot)}</h2>
+      <p><b>${Math.round(d.elo)}</b> Elo · ${Number(d.matches)} matches · ${Number(d.hands).toLocaleString()} hands</p>
       ${sparkline(hist.map((h) => h.elo_after))}
       <h2>Recent matches</h2>
       ${(d.recent_matches || []).slice(0, 8).map((m) => `
-        <div class="script-line">${m.played_at || ""} · rank ${m.rank} ·
+        <div class="script-line">${esc(m.played_at)} · rank ${Number(m.rank)} ·
           <span class="${m.net_chips >= 0 ? "up" : "down"}">${money(m.net_chips)}</span>
           · Elo ${Math.round(m.elo_before)} → ${Math.round(m.elo_after)}
         </div>`).join("") || "<p class='muted'>No matches yet.</p>"}
@@ -174,7 +173,7 @@ async function selectBot(name) {
       $("#hands").scrollIntoView({ behavior: "smooth" });
     });
   } catch (err) {
-    card.innerHTML = `<h2>${name}</h2><p>${err.message}</p>`;
+    card.innerHTML = `<h2>${esc(name)}</h2><p>${esc(err.message)}</p>`;
   }
 }
 
@@ -212,7 +211,8 @@ async function tuneHeadsUp() {
   try {
     const data = await liveTable(headsUpDb);
     const frame = data.frame || {};
-    const stamp = JSON.stringify([data.hands_saved, frame.log, frame.pot]);
+    showTables($("#hu-tables"), data, headsUpDb, tuneHeadsUp);
+    const stamp = JSON.stringify([data.table, data.playing, data.hands_saved, frame.log, frame.pot, frame.actor]);
     if (stamp === headsUp.stamp) return;
     headsUp.stamp = stamp;
     renderFelt($("#hu-felt"), frame.seats ? frame : emptyFrame());
@@ -230,12 +230,12 @@ async function loadHeadsUpBoard() {
     const rows = data.bots || [];
     $("#hu-lb tbody").innerHTML = rows.map((r) => `
       <tr>
-        <td>${r.rank}</td><td class="bot-name">${r.bot}</td><td>${Math.round(r.elo)}</td>
+        <td>${r.rank}</td><td class="bot-name">${esc(r.bot)}</td><td>${Math.round(r.elo)}</td>
         <td>${r.matches}</td><td>${r.hands.toLocaleString()}</td>
         <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
       </tr>`).join("") || `<tr><td colspan="6">No heads-up matches yet.</td></tr>`;
   } catch (err) {
-    $("#hu-lb tbody").innerHTML = `<tr><td colspan="6">${err.message}</td></tr>`;
+    $("#hu-lb tbody").innerHTML = `<tr><td colspan="6">${esc(err.message)}</td></tr>`;
   }
 }
 
@@ -244,28 +244,18 @@ function stopBroadcast() {
   live.timer = null;
 }
 
-function showTables(n) {
-  const box = $("#table-tabs");
-  if (Number(box.dataset.count) === n) {
-    if (Number(box.value) !== live.table) box.value = String(live.table);
-    return;
+function showTables(box, data, db, refresh) {
+  const ids = data.tableIds || [];
+  if (box.dataset.ids !== ids.join(',')) {
+    box.dataset.ids = ids.join(',');
+    box.replaceChildren(...ids.map(i => new Option('Table ' + (i+1), String(i))));
   }
-  box.dataset.count = String(n);
-  box.innerHTML = "";
-  for (let i = 0; i < n; i++) {
-    const opt = document.createElement("option");
-    opt.value = String(i);
-    opt.textContent = "Table " + (i + 1);
-    box.appendChild(opt);
-  }
-  box.value = String(Math.min(live.table, n - 1));
+  box.value = String(data.table ?? 0);
   if (!box.dataset.bound) {
     box.dataset.bound = "1";
     box.addEventListener("change", () => {
-      live.table = Number(box.value) || 0;
-      pickTable(live.table);
-      live.cursor = -1;
-      tune();
+      pickTable(box.value, db);
+      refresh();
     });
   }
 }
@@ -275,8 +265,8 @@ async function tune() {
   live.busy = true;
   try {
     const data = await liveTable();
-    showTables(data.tables || 1);
-    const stamp = JSON.stringify([data.hand_no, data.frame && data.frame.phase, data.frame && data.frame.pot, data.frame && data.frame.actor, data.frame && (data.frame.last || {}).kind]);
+    showTables($("#table-tabs"), data, undefined, tune);
+    const stamp = JSON.stringify([data.table, data.playing, data.hands_saved, data.hand_no, data.frame?.phase, data.frame?.pot, data.frame?.actor, data.frame?.log]);
     if (stamp === live.stamp) return;
     live.stamp = stamp;
     live.frame = data.frame;
@@ -353,9 +343,9 @@ function renderFelt(root, frame) {
     info.className = "seat-info";
     const net = s.net != null ? `<div class="${s.net >= 0 ? "net-pos" : "net-neg"}">${money(s.net)}</div>` : "";
     info.innerHTML = `
-      <div class="who">${s.bot}</div>
-      <div class="meta">${s.position}${s.all_in ? " · ALL-IN" : ""}</div>
-      <div class="stack">${(s.stack || 0).toLocaleString()}${s.category ? " · " + s.category : ""}</div>
+      <div class="who">${esc(s.bot)}</div>
+      <div class="meta">${esc(s.position)}${s.all_in ? " · ALL-IN" : ""}</div>
+      <div class="stack">${Number(s.stack || 0).toLocaleString()}${s.category ? " · " + esc(s.category) : ""}</div>
       ${net}`;
     box.appendChild(info);
     node.appendChild(box);
@@ -390,15 +380,15 @@ async function loadHands(bot) {
       return;
     }
     list.innerHTML = data.hands.map((h) => `
-      <button type="button" class="hand-row" data-id="${h.hand_id}">
-        <strong>#${h.hand_id}</strong> match ${h.match_id}
-        · pot ${h.pot.toLocaleString()} ${h.showdown ? "· showdown" : ""}
-        <div class="muted">${h.players.map((p) => p.bot).join(" · ")}</div>
+      <button type="button" class="hand-row" data-id="${Number(h.hand_id)}">
+        <strong>#${Number(h.hand_id)}</strong> match ${Number(h.match_id)}
+        · pot ${Number(h.pot).toLocaleString()} ${h.showdown ? "· showdown" : ""}
+        <div class="muted">${h.players.map((p) => esc(p.bot)).join(" · ")}</div>
       </button>`).join("");
     $$(".hand-row", list).forEach((b) => b.addEventListener("click", () => openHand(b.dataset.id)));
     openHand(data.hands[0].hand_id);
   } catch (err) {
-    list.innerHTML = `<p>${err.message}</p>`;
+    list.textContent = err.message;
   }
 }
 
@@ -535,15 +525,15 @@ async function openHand(id) {
   replay.id = id;
   const script = $("#replay-script");
   let street = -1;
-  const lines = [`<h2>Hand #${data.hand_id}</h2>`];
+  const lines = [`<h2>Hand #${Number(data.hand_id)}</h2>`];
   data.actions.forEach((a, i) => {
     if (a.street !== street) {
       street = a.street;
       const shown = data.board.slice(0, [0, 3, 4, 5][a.street]).join(" ");
-      lines.push(`<div class="street">${a.street_name.toUpperCase()} ${shown}</div>`);
+      lines.push(`<div class="street">${esc(a.street_name.toUpperCase())} ${esc(shown)}</div>`);
     }
     const amt = a.kind === "raise" || a.kind === "bet" ? " " + a.to_total : (a.amount ? " " + a.amount : "");
-    lines.push(`<button type="button" class="script-line" data-step="${i + 1}">${a.bot} ${a.kind}${amt}${a.all_in ? " (all-in)" : ""}</button>`);
+    lines.push(`<button type="button" class="script-line" data-step="${i + 1}">${esc(a.bot)} ${esc(a.kind)}${esc(amt)}${a.all_in ? " (all-in)" : ""}</button>`);
   });
   lines.push(`<button type="button" class="script-line" data-step="${replay.frames.length - 1}">Showdown</button>`);
   script.innerHTML = lines.join("");
@@ -559,77 +549,23 @@ async function openHand(id) {
   playReplay();
 }
 
-function botSlug(raw) {
-  const slug = (raw || "my_bot").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
-  return slug && !/^[0-9]/.test(slug) ? slug.slice(0, 32) : "my_bot";
-}
-
-function refreshJoin() {
-  const name = botSlug($("#bot-name").value);
-  $("#join-cmd").textContent = "python -m pokerarena join " + name + ".py";
-}
-
-function bindPokerForm(prefix, db, after) {
-  const form = $("#" + prefix + "join-form");
-  const nameBox = $("#" + prefix + "bot-name");
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const name = botSlug(nameBox.value);
-    nameBox.value = name;
-    refreshJoin();
-    const status = $("#" + prefix + "join-status");
-    status.textContent = "Sitting " + name + "…";
+function bindConnect() {
+  const root = $("#connect");
+  if (root.dataset.bound) return;
+  root.dataset.bound = "1";
+  $$("[data-jump]").forEach((b) => b.addEventListener("click", () => {
+    $("#" + b.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+  $$(".copy").forEach((btn) => btn.addEventListener("click", async () => {
+    const text = $("#" + btn.dataset.copy).textContent;
     try {
-      const res = await fetch(`https://maincloud.spacetimedb.com/v1/database/${db}/call/connect_bot`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify([name, $("#" + prefix + "bot-source").value]),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text.slice(0, 180) || "the table refused the bot");
-      }
-      status.textContent = name + " is in. The next match seats them.";
-      if (after) after();
+      await navigator.clipboard.writeText(text);
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = "Copy"; }, 1200);
     } catch (err) {
-      status.textContent = err.message;
+      btn.textContent = "Select the command";
     }
-  });
-}
-
-async function loadConnect() {
-  const form = $("#join-form");
-  if (!form.dataset.bound) {
-    form.dataset.bound = "1";
-    $("#bot-name").addEventListener("input", refreshJoin);
-    bindPokerForm("", "poker-arena", refreshLeaderboard);
-    bindPokerForm("hu-", "poker-heads-up");
-    bindFiggieConnect();
-    $$("[data-jump]").forEach((b) => b.addEventListener("click", () => {
-      $("#" + b.dataset.jump).scrollIntoView({ behavior: "smooth", block: "start" });
-    }));
-    $$(".copy").forEach((btn) => btn.addEventListener("click", async () => {
-      const text = $("#" + btn.dataset.copy).textContent;
-      try {
-        await navigator.clipboard.writeText(text);
-        btn.textContent = "Copied";
-        setTimeout(() => { btn.textContent = "Copy"; }, 1200);
-      } catch (err) {
-        btn.textContent = "Select the command";
-      }
-    }));
-  }
-  refreshJoin();
-  try {
-    const guide = await api("/api/connect");
-    if (guide.repo) {
-      $("#clone-cmd").textContent = "git clone " + guide.repo + ".git\ncd PokerArena";
-    }
-    $("#obs-list").innerHTML = (guide.observation || []).map((t) => `<li>${t}</li>`).join("");
-    $("#safety").textContent = guide.safety || "";
-  } catch (err) {
-    $("#join-status").textContent = err.message;
-  }
+  }));
 }
 
 boot();

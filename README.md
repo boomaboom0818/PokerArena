@@ -6,7 +6,9 @@ Hold'em at the same time, get a multiplayer **Elo** rating, and leave behind a
 
 ```
 python -m pokerarena new my_bot.py                                 # starter file
-python -m pokerarena join my_bot.py                                # sit it with the built-ins
+python -m pokerarena connect my_bot.py --game 6-max                 # live arena; keep running
+python -m pokerarena connect my_bot.py --game heads-up              # live heads-up arena
+python -m pokerarena join my_bot.py                                # offline practice
 python -m pokerarena run --bot-dir bots_user --builtins --rounds 20   # play
 python -m pokerarena leaderboard                                      # ratings + stats
 python -m pokerarena serve                                            # website + API on :8787
@@ -31,7 +33,8 @@ Deploy by importing this repo in the Vercel dashboard (framework preset: Other).
 The committed [data/sample.db](data/sample.db) is the leaderboard the hosted
 site reads. After a real run, replace that file (or set `POKERARENA_DB`) and
 redeploy. To watch a match as it is written, run `serve` against your own
-`arena.db` and open the site with `?api=http://127.0.0.1:8787`.
+`arena.db` and open `http://127.0.0.1:8787` directly. The archive API is same-origin;
+the three live tables connect to their fixed Maincloud databases.
 
 ## Figgie ([spacetimedb-figgie/](spacetimedb-figgie/src/index.ts))
 
@@ -72,12 +75,18 @@ Any other language: open `wss://maincloud.spacetimedb.com/v1/database/figgie-are
 with subprotocol `v1.json.spacetimedb`, subscribe to `my_hand`, `seat`, `quote`, `trade` and
 `figgie_table`, call `register(name)`, then `bid(suit, price)`, `ask(suit, price)`,
 `buy(suit)`, `sell(suit)`, `cancel(suit, side)`. Keep the token from the first message and send
-it back (`?token=` or `Authorization: Bearer`) to keep your name. The first snapshot sends rows
+it back in an `Authorization: Bearer` handshake header over WSS to keep your name. The first snapshot sends rows
 as JSON objects; later `TransactionUpdateLight` messages send them as arrays in column order
-(see the Figgie page or [figgie.py](pokerarena/figgie.py) `COLUMNS`). You can also paste a
-JavaScript `act(state)` on the site and the module runs it for you (`host_bot`).
+(see the Connect tab or [figgie.py](pokerarena/figgie.py) `COLUMNS`). All participant strategies run
+on the bot's machine. Only arena-owned house opponents can fill empty seats. An older Figgie bot's
+owner can use the same identity to register its name as a remote bot between rounds.
+The Python client stores owner-only token files separately for each server, database and bot. For a
+pre-upgrade token, the client prints the destination for manual migration after verifying its origin.
 
-Publish or update the module with
+Set `FIGGIE_DEAL_KEY` in the publishing environment to 32 cryptographically random bytes encoded as
+64 hex characters (e.g. `export FIGGIE_DEAL_KEY="$(openssl rand -hex 32)"` for first setup).
+Keep it in the deployment secret store, outside the repo and frontend. It keys the shuffle so public
+timing information cannot reveal cards. Publish or update the module with
 `spacetime publish --module-path spacetimedb-figgie figgie-arena` (always pass
 `--module-path`: the root `spacetime.json` points at the 6-max module).
 
@@ -89,9 +98,29 @@ Publish or update the module with
 | Heads-up | `poker-heads-up` | [spacetimedb-hu/](spacetimedb-hu/src/index.ts) |
 | Figgie | `figgie-arena` | [spacetimedb-figgie/](spacetimedb-figgie/src/index.ts) |
 
-Each has its own scheduled tick, so all three play at the same time whether or not anyone is
-watching. The poker modules have a `control` row; `spacetime call <db> set_paused false`
-resumes one that was paused.
+Each has its own scheduled tick. For poker, the Python `connect` command loads your local `Bot`
+class and calls `act(Observation)` for each turn. For a custom client, connect to
+`wss://maincloud.spacetimedb.com/v1/database/<database>/subscribe` with `v1.json.spacetimedb`.
+On the same socket call `register(name)`, subscribe to `SELECT * FROM my_turn`, and answer with
+`submit_action(turn_id, action, raise_to)`. `my_turn` rows are `(turn_id, owner, table_id, deadline_ms,
+observation)`; parse the observation JSON. `raise_to` is the total street bet when raising, else zero.
+The turn expires after 10 seconds (check if free, otherwise fold). Disconnecting removes the bot
+from future matchmaking. Keep the token for reconnects. Public `standings` has stats; `table_state`
+shows hole cards only after a hand ends. Source uploads and player-selected server bots are not available.
+
+**Upgrading existing arenas:** Keep the games paused and publish each module to its matching database
+from the repository checkout before deploying the matching frontend. For both poker publishes set
+`ARENA_ADMIN_ID` to the designated operator's **64-character lowercase hex SpacetimeDB identity**
+(not a token or the database identity). Supply it in the publishing environment; it is a required
+module setting. Also set `POKER_DEAL_KEY` on first publish (a separate 32-byte random hex secret
+for each poker database, like `FIGGIE_DEAL_KEY`). Later publishes preserve stored settings.
+Run `npm ci` in each module before building to refresh the local `@pokerarena/shared` package.
+Figgie retains the admin recorded at initialization. Use `--delete-data=never`;
+the poker visibility change intentionally breaks direct `bot` subscriptions, which must switch to
+`standings`. Existing poker rows keep their ratings and names but have no provable owner and are
+not seated; register a new name, or ask the admin to remove the old row before re-registration.
+Previously public bot source cannot be made retroactively private. Rotate any secret it contained.
+Check the public standings and owner controls before the admin resumes games with `set_paused`.
 
 ## How the arena works
 
@@ -213,5 +242,4 @@ pokerarena/bots/         Bot base class, loader, built-ins      features.py   op
 * Bots run in-process in the worker, with no time limit or sandbox — only run code you trust.
 * Ideas: duplicate-deal (replay the same cards with rotated seats) for lower variance, per-action time limits,
   Parquet export, TrueSkill/Weng-Lin instead of pairwise Elo.
-* The website does not execute uploaded bot code. Connecting a bot means running it
-  locally (or on a machine you trust) with `--bot-dir`, then serving or redeploying the database.
+* Connect to a public arena with `connect` (poker) or `figgie`; `--bot-dir` runs an independent local tournament.

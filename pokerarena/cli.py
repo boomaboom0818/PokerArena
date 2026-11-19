@@ -231,6 +231,14 @@ def main(argv=None) -> None:
     fg.add_argument("--database", default="figgie-arena")
     fg.set_defaults(fn=cmd_figgie)
 
+    from .remote import run as connect_remote
+    remote = sub.add_parser('connect', help='run a local poker bot against the live WebSocket arena')
+    remote.add_argument('bot', help='local .py file containing a Bot subclass')
+    remote.add_argument('--game', choices=['6-max', 'heads-up'], default='6-max')
+    remote.add_argument('--name', help='leaderboard name (one per identity and arena)')
+    remote.add_argument('--host', default='wss://maincloud.spacetimedb.com')
+    remote.set_defaults(fn=connect_remote)
+
     fn = sub.add_parser("figgie-new", help="write a starter Figgie bot file")
     fn.add_argument("path", help="where to write the .py file, for example my_figgie_bot.py")
     fn.add_argument("--name", help="arena name (default: the file name)")

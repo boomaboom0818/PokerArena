@@ -122,22 +122,13 @@ class handler(BaseHTTPRequestHandler):
             route = "/api/" + hinted.lstrip("/")
         return route, qs
 
-    def _read_json(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n) if n else b"{}"
-        try:
-            data = json.loads(raw.decode() or "{}")
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
-
     def _finish(self, code, payload):
         body = json.dumps(payload).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
         self.wfile.write(body)
@@ -149,18 +140,12 @@ class handler(BaseHTTPRequestHandler):
         route, qs = self._qs()
         try:
             code, payload = dispatch("GET", route, qs, {})
-        except ValueError as exc:
-            code, payload = 400, {"error": str(exc)}
-        except Exception as exc:
-            code, payload = 500, {"error": str(exc)}
+        except (ValueError, OverflowError):
+            code, payload = 400, {"error": "invalid request parameter"}
+        except Exception:
+            code, payload = 500, {"error": "internal server error"}
         self._finish(code, payload)
 
     def do_POST(self):
-        route, qs = self._qs()
-        try:
-            code, payload = dispatch("POST", route, qs, self._read_json())
-        except ValueError as exc:
-            code, payload = 400, {"error": str(exc)}
-        except Exception as exc:
-            code, payload = 500, {"error": str(exc)}
-        self._finish(code, payload)
+        self.close_connection = True
+        self._finish(405, {"error": "read-only API; use GET"})

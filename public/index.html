@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
 <link rel="stylesheet" href="/styles.css?v=24">
 </head>
@@ -109,6 +108,7 @@
         <h1>Heads-up</h1>
         <p class="lede">Two bots · blinds 50 and 100 · stacks reset each hand · a match is six hands</p>
       </div>
+      <label class="table-pick">Table <select id="hu-tables" aria-label="Heads-up table"></select></label>
     </div>
     <aside class="live-card">
       <div class="live-head">
@@ -271,92 +271,44 @@
       <button type="button" data-jump="cn-figgie">Figgie</button>
     </div>
 
-    <div class="rankings-block" id="cn-6max">
-      <div class="hero"><div><h2>6-max hold'em</h2>
-        <p class="muted">Paste a function named <code>act</code>. The live table calls it on every decision, and the bot shows up in the 6-max rankings.</p></div></div>
-      <dl class="cn-server"><div><dt>Host</dt><dd><code>wss://maincloud.spacetimedb.com</code></dd></div><div><dt>Database</dt><dd><code>poker-arena</code></dd></div><div><dt>Reducer</dt><dd><code>connect_bot(name, source)</code></dd></div><div><dt>Language</dt><dd>JavaScript</dd></div></dl>
-    <form class="join-box" id="join-form">
-      <label>Bot name
-        <input id="bot-name" type="text" value="my_bot" maxlength="24" autocomplete="off" spellcheck="false">
-      </label>
-      <label class="wide">act(obs)
-        <textarea id="bot-source" spellcheck="false" rows="8">function act(obs) {
-  if (obs.canCheck) return "check";
-  if (obs.toCall <= obs.bigBlind) return "call";
-  return "fold";
-}</textarea>
-      </label>
-      <button type="submit" class="primary">Sit this bot</button>
-      <p class="join-status" id="join-status"></p>
-    </form>
-    <details class="panel">
-      <summary>Or send it from code</summary>
-      <p class="muted">One HTTP call. No account or token needed. The body is the bot name and the source of <code>act</code>.</p>
-      <pre class="code" id="cn6-curl">curl -X POST https://maincloud.spacetimedb.com/v1/database/poker-arena/call/connect_bot \
-  -H "Content-Type: application/json" \
-  -d '["my_bot", "function act(obs) { return obs.canCheck ? \"check\" : \"fold\"; }"]'</pre>
-      <button type="button" class="copy" data-copy="cn6-curl">Copy</button>
-    </details>
-    <details class="panel">
-      <summary>Or run it from your own machine</summary>
-    <ol class="join-steps">
-      <li>
-        <strong>Get the arena</strong>
-        <pre class="code" id="clone-cmd">git clone https://github.com/boomaboom0818/PokerArena.git
+    <div class="panel">
+      <h2>Run your bot on your machine</h2>
+      <p>The arena deals cards, enforces the rules and keeps score. Your process receives a private observation and sends back its decision. Keep it running on a laptop or server with outbound WebSocket access. No public IP or inbound port is needed.</p>
+      <pre class="code" id="clone-cmd">git clone https://github.com/boomaboom0818/PokerArena.git
 cd PokerArena</pre>
-        <button type="button" class="copy" data-copy="clone-cmd">Copy</button>
-      </li>
-      <li>
-        <strong>Put the downloaded file in that folder</strong>
-        <p class="muted">Open it and change <code>act</code>. Check if you can, call a small bet, otherwise fold.</p>
-      </li>
-      <li>
-        <strong>Sit it at a table</strong>
-        <pre class="code" id="join-cmd">python -m pokerarena join my_bot.py</pre>
-        <button type="button" class="copy" data-copy="join-cmd">Copy</button>
-        <p class="muted">Then <code>python -m pokerarena serve</code> and open the rankings.</p>
-      </li>
-    </ol>
-    </details>
-    <details class="panel">
-      <summary>What <code>act</code> can see</summary>
-      <ul id="obs-list"></ul>
-      <p class="muted" id="safety"></p>
-    </details>
+      <button type="button" class="copy" data-copy="clone-cmd">Copy</button>
+    </div>
+
+    <div class="rankings-block" id="cn-6max">
+      <div class="hero"><div><h2>6-max hold'em</h2><p class="muted">Create a Python bot once, edit its <code>act(obs)</code> method, then start the connector. Choose a unique name; the CLI saves your identity for reconnects.</p></div></div>
+      <pre class="code" id="six-cmd">python -m pokerarena new my_six_bot.py
+python -m pokerarena connect my_six_bot.py --game 6-max</pre>
+      <button type="button" class="copy" data-copy="six-cmd">Copy</button>
+      <details class="panel"><summary>Connect from another language</summary>
+        <p>Open <code>wss://maincloud.spacetimedb.com/v1/database/poker-arena/subscribe</code> with subprotocol <code>v1.json.spacetimedb</code>. Save the first identity token privately; send it in the Authorization bearer header on reconnect.</p>
+        <ol><li>On that socket call <code>register(name)</code> and subscribe to <code>SELECT * FROM my_turn</code>.</li>
+        <li>Read inserted rows in the initial snapshot and subsequent updates. Columns: <code>turn_id, owner, table_id, deadline_ms, observation</code>. Parse the observation JSON for your hole cards, board, stacks, history and legal raise bounds. Card ints are rank × 4 + suit (ranks 2–A, suits ♣♦♥♠).</li>
+        <li>Reply on the same socket with <code>submit_action(turn_id, action, raise_to)</code>. Use check, call, fold or raise; send 0 unless raising, then send the total street bet. Turns expire after 10 seconds: the arena checks if free, otherwise folds.</li></ol>
+      </details>
     </div>
 
     <div class="rankings-block" id="cn-hu">
-      <div class="hero"><div><h2>Heads-up hold'em</h2>
-        <p class="muted">Same <code>act</code> function and same observation, but your bot plays one opponent at a time on its own database and leaderboard.</p></div></div>
-      <dl class="cn-server"><div><dt>Host</dt><dd><code>wss://maincloud.spacetimedb.com</code></dd></div><div><dt>Database</dt><dd><code>poker-heads-up</code></dd></div><div><dt>Reducer</dt><dd><code>connect_bot(name, source)</code></dd></div><div><dt>Language</dt><dd>JavaScript</dd></div></dl>
-    <form class="join-box" id="hu-join-form">
-      <label>Bot name
-        <input id="hu-bot-name" type="text" value="my_bot" maxlength="24" autocomplete="off" spellcheck="false">
-      </label>
-      <label class="wide">act(obs)
-        <textarea id="hu-bot-source" spellcheck="false" rows="8">function act(obs) {
-  if (obs.canCheck) return "check";
-  if (obs.toCall <= obs.bigBlind) return "call";
-  return "fold";
-}</textarea>
-      </label>
-      <button type="submit" class="primary">Sit this bot</button>
-      <p class="join-status" id="hu-join-status"></p>
-    </form>
-    <details class="panel">
-      <summary>Or send it from code</summary>
-      <p class="muted">One HTTP call. No account or token needed. The body is the bot name and the source of <code>act</code>.</p>
-      <pre class="code" id="cnhu-curl">curl -X POST https://maincloud.spacetimedb.com/v1/database/poker-heads-up/call/connect_bot \
-  -H "Content-Type: application/json" \
-  -d '["my_bot", "function act(obs) { return obs.canCheck ? \"check\" : \"fold\"; }"]'</pre>
-      <button type="button" class="copy" data-copy="cnhu-curl">Copy</button>
-    </details>
+      <div class="hero"><div><h2>Heads-up hold'em</h2><p class="muted">Create a Python bot once, edit its <code>act(obs)</code> method, then start the connector. Choose a unique name; the CLI saves your identity for reconnects.</p></div></div>
+      <pre class="code" id="hu-cmd">python -m pokerarena new my_hu_bot.py
+python -m pokerarena connect my_hu_bot.py --game heads-up</pre>
+      <button type="button" class="copy" data-copy="hu-cmd">Copy</button>
+      <details class="panel"><summary>Connect from another language</summary>
+        <p>Open <code>wss://maincloud.spacetimedb.com/v1/database/poker-heads-up/subscribe</code> with subprotocol <code>v1.json.spacetimedb</code>. Save the first identity token privately; send it in the Authorization bearer header on reconnect.</p>
+        <ol><li>On that socket call <code>register(name)</code> and subscribe to <code>SELECT * FROM my_turn</code>.</li>
+        <li>Read inserted rows in the initial snapshot and subsequent updates. Columns: <code>turn_id, owner, table_id, deadline_ms, observation</code>. Parse the observation JSON for your hole cards, board, stacks, history and legal raise bounds. Card ints are rank × 4 + suit (ranks 2–A, suits ♣♦♥♠).</li>
+        <li>Reply on the same socket with <code>submit_action(turn_id, action, raise_to)</code>. Use check, call, fold or raise; send 0 unless raising, then send the total street bet. Turns expire after 10 seconds: the arena checks if free, otherwise folds.</li></ol>
+      </details>
     </div>
 
     <div class="rankings-block" id="cn-figgie">
       <div class="hero"><div><h2>Figgie</h2>
-        <p class="muted">Your bot opens one WebSocket, claims a name, and trades. It sits down at the next deal and plays every round while it stays connected. Or paste an <code>act(state)</code> function and let the arena run it.</p></div></div>
-      <dl class="cn-server"><div><dt>Host</dt><dd><code>wss://maincloud.spacetimedb.com</code></dd></div><div><dt>Database</dt><dd><code>figgie-arena</code></dd></div><div><dt>WebSocket</dt><dd><code>/v1/database/figgie-arena/subscribe</code></dd></div><div><dt>Subprotocol</dt><dd><code>v1.json.spacetimedb</code></dd></div><div><dt>Reducers</dt><dd><code>register, bid, ask, buy, sell, cancel, host_bot</code></dd></div></dl>
+        <p class="muted">Your bot opens one WebSocket, claims a name, and trades. It sits down at the next deal and plays every round while it stays connected. Your strategy runs only on your machine.</p></div></div>
+      <dl class="cn-server"><div><dt>Host</dt><dd><code>wss://maincloud.spacetimedb.com</code></dd></div><div><dt>Database</dt><dd><code>figgie-arena</code></dd></div><div><dt>WebSocket</dt><dd><code>/v1/database/figgie-arena/subscribe</code></dd></div><div><dt>Subprotocol</dt><dd><code>v1.json.spacetimedb</code></dd></div><div><dt>Reducers</dt><dd><code>register, bid, ask, buy, sell, cancel</code></dd></div></dl>
       <div class="fg-connect">
         <div class="panel">
           <h3>Python, no installs</h3>
@@ -369,7 +321,7 @@ python -m pokerarena figgie my_figgie_bot.py</pre>
         </div>
         <div class="panel">
           <h3>Any language, raw WebSocket</h3>
-          <p class="muted">Connect to <code id="fg-ws-url"></code> with subprotocol <code>v1.json.spacetimedb</code>. The first message gives you a token; send it back as <code>?token=</code> (or <code>Authorization: Bearer</code>) next time to keep your name.</p>
+          <p class="muted">Connect to <code>wss://maincloud.spacetimedb.com/v1/database/figgie-arena/subscribe</code> with subprotocol <code>v1.json.spacetimedb</code>. Keep the token from the first message private. Bot clients reconnect with an <code>Authorization: Bearer</code> handshake header; the Python client handles this automatically.</p>
           <pre class="code" id="fg-js-cmd">const ws = new WebSocket(
   "wss://maincloud.spacetimedb.com/v1/database/figgie-arena/subscribe",
   "v1.json.spacetimedb");
@@ -404,25 +356,6 @@ ws.onmessage = (e) => {
             <p class="muted">Times are Unix milliseconds. <code>goal</code>, <code>twelve</code> and <code>counts</code> stay empty until the bell. A refused order comes back as a <code>TransactionUpdate</code> with <code>status.Failed</code> and the reason. HTTP works too: <code>POST /v1/database/figgie-arena/call/bid</code> with body <code>["hearts", 7]</code> and your token; call <code>ready</code> every few seconds to stay seated.</p>
           </details>
         </div>
-        <form class="join-box" id="fg-host-form">
-          <h3 class="wide-title">Or let the arena run it</h3>
-          <label>Bot name
-            <input id="fg-host-name" type="text" value="my_figgie_bot" maxlength="24" autocomplete="off" spellcheck="false">
-          </label>
-          <label class="wide">act(state), called twice a second. Return one order or a list of up to four.
-            <textarea id="fg-host-source" spellcheck="false" rows="10">function act(state) {
-  // state.hand, state.dealt, state.cash, state.timeLeft, state.trades,
-  // state.book.hearts = { bid, bidder, ask, asker }, state.goalOdds.hearts = 0.42
-  const odds = state.goalOdds;
-  const goal = Object.keys(odds).sort((a, b) => odds[b] - odds[a])[0];
-  const fair = Math.round(odds[goal] * 18);
-  if (state.book[goal].ask && state.book[goal].ask < fair) return { type: "buy", suit: goal };
-  return { type: "bid", suit: goal, price: Math.max(1, fair - 3) };
-}</textarea>
-          </label>
-          <button type="submit" class="primary">Sit this bot</button>
-          <p class="join-status" id="fg-host-status"></p>
-        </form>
       </div>
     </div>
   </section>
@@ -432,6 +365,6 @@ ws.onmessage = (e) => {
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=30"></script>
+<script type="module" src="/app.js?v=32"></script>
 </body>
 </html>

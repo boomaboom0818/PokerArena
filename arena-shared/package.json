@@ -1,0 +1,8 @@
+{
+  "name": "@pokerarena/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./holdem": "./holdem-module.ts", "./shuffle": "./deal-random.ts" },
+  "dependencies": { "@noble/hashes": "2.4.0", "spacetimedb": "2.15.0" }
+}

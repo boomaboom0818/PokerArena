@@ -1,4 +1,4 @@
-const HOST = "https://maincloud.spacetimedb.com";
+export const HOST = "https://maincloud.spacetimedb.com";
 const DB = "poker-arena";
 const HU_DB = "poker-heads-up";
 
@@ -27,22 +27,23 @@ function rows(result) {
   });
 }
 
-let pickedTable = 0;
+const pickedTables = new Map();
 
-export function pickTable(id) {
-  pickedTable = Number(id) || 0;
+export function pickTable(id, db = DB) {
+  pickedTables.set(db, Number(id) || 0);
 }
 
 export async function liveTable(db = DB) {
-  const result = await sql("SELECT * FROM table_state", db);
-  const all = rows(result);
+  const [result, controls] = await Promise.all([sql("SELECT * FROM table_state", db), sql("SELECT paused FROM control", db)]);
+  const all = rows(result).sort((a,b) => Number(a.table_id)-Number(b.table_id));
   if (!all.length) return { playing: false, tables: 0, frame: { seats: [], board: [], pot: 0 } };
-  const row = all.find((r) => Number(r.table_id) === pickedTable) || all[0];
-  const seats = JSON.parse(row.seats || "[]").map((s, i) => ({ ...s, seat: i, is_button: i === 0 }));
+  const row = all.find((r) => Number(r.table_id) === pickedTables.get(db)) || all[0];
+  const seats = JSON.parse(row.seats || "[]").map((s, i) => ({ ...s, seat: i, is_button: s.is_button ?? (i === 0) }));
   return {
     live: true,
-    playing: true,
+    playing: rows(controls)[0]?.paused === false,
     tables: all.length,
+    tableIds: all.map(r => Number(r.table_id)),
     table: Number(row.table_id),
     names: String(row.names || "").split(",").filter(Boolean),
     hand_no: row.hand_no,
@@ -52,8 +53,8 @@ export async function liveTable(db = DB) {
       phase: row.phase,
       board: String(row.board || "").split(" ").filter(Boolean),
       pot: row.pot,
-      actor: null,
-      last: { kind: "result", bot: row.log },
+      actor: seats.find(s => s.bot === row.actor)?.seat ?? null,
+      last: { kind: row.phase === 'result' ? 'result' : 'action', bot: row.log },
       log: row.log,
       seats,
     },
@@ -61,7 +62,7 @@ export async function liveTable(db = DB) {
 }
 
 export async function leaderboard(db = DB) {
-  const result = await sql("SELECT * FROM bot", db);
+  const result = await sql("SELECT * FROM standings", db);
   const bots = rows(result).map((b) => ({
     bot: b.name,
     elo: Math.round(b.elo * 10) / 10,

@@ -21,21 +21,24 @@ Run it with ``python -m pokerarena figgie my_bot.py``.
 from __future__ import annotations
 
 import base64
+import hashlib
 import importlib.util
 import inspect
 import json
 import os
 import queue
+import re
 import socket
 import ssl
 import struct
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
 from math import comb
 from pathlib import Path
-from urllib.parse import quote as urlquote, urlparse
+from urllib.parse import urlsplit
 
 HOST = "wss://maincloud.spacetimedb.com"
 DATABASE = "figgie-arena"
@@ -209,23 +212,52 @@ def build_state(cache: Cache, me: str, now: float | None = None) -> State:
 
 # ---------------------------------------------------------------- websocket
 
+MAX_HEADERS = 16 * 1024
+MAX_MESSAGE = 2 * 1024 * 1024
+
+
+def _origin(url: str) -> str:
+    u = urlsplit(url)
+    if (not u.hostname or u.scheme not in ('ws', 'wss') or u.username is not None or
+            u.password is not None or u.query or u.fragment or any(ord(c) <= 32 or ord(c) >= 127 for c in url)):
+        raise ValueError('expected a WebSocket URL without credentials, query or fragment')
+    if u.scheme == 'ws' and u.hostname not in ('127.0.0.1', 'localhost', '::1'):
+        raise ValueError('remote arenas require wss://')
+    host = f'[{u.hostname}]' if ':' in u.hostname else u.hostname
+    port = u.port or (443 if u.scheme == 'wss' else 80)
+    return f'{u.scheme}://{host}:{port}'
+
+
+def _valid_token(token: str) -> bool:
+    return isinstance(token, str) and bool(re.fullmatch(r'[A-Za-z0-9._~+/=-]{1,8192}', token))
+
+
 class WebSocket:
     """The small part of RFC 6455 a bot needs: text frames, ping/pong, close."""
 
     def __init__(self, url: str, protocol: str, token: str | None = None, timeout: float = 15):
-        u = urlparse(url)
+        origin = _origin(url)
+        if protocol != PROTOCOL or (token is not None and not _valid_token(token)):
+            raise ValueError('invalid protocol or bearer token')
+        u = urlsplit(url)
         secure = u.scheme == "wss"
         port = u.port or (443 if secure else 80)
         raw = socket.create_connection((u.hostname, port), timeout=timeout)
-        if secure:
-            raw = ssl.create_default_context().wrap_socket(raw, server_hostname=u.hostname)
         self.sock = raw
         self.lock = threading.Lock()
+        try:
+            if secure:
+                self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=u.hostname)
+            self._upgrade(u.path or '/', urlsplit(origin).netloc, protocol, token, timeout)
+        except BaseException:
+            self.sock.close()
+            raise
+
+    def _upgrade(self, path, authority, protocol, token, timeout):
         key = base64.b64encode(os.urandom(16)).decode()
-        path = (u.path or "/") + (("?" + u.query) if u.query else "")
         lines = [
             f"GET {path} HTTP/1.1",
-            f"Host: {u.hostname}" + (f":{u.port}" if u.port else ""),
+            f"Host: {authority}",
             "Upgrade: websocket",
             "Connection: Upgrade",
             f"Sec-WebSocket-Key: {key}",
@@ -237,25 +269,41 @@ class WebSocket:
             lines.append(f"Authorization: Bearer {token}")
         self.sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
         head = b""
+        deadline = time.monotonic() + timeout
         while b"\r\n\r\n" not in head:
+            if len(head) >= MAX_HEADERS or time.monotonic() >= deadline:
+                raise ConnectionError('WebSocket upgrade exceeded limits')
+            self.sock.settimeout(max(0.001, deadline - time.monotonic()))
             chunk = self.sock.recv(4096)
             if not chunk:
                 raise ConnectionError("server closed during handshake")
             head += chunk
         head, self._buf = head.split(b"\r\n\r\n", 1)
-        status = head.split(b"\r\n", 1)[0].decode(errors="replace")
-        if " 101 " not in status + " ":
-            raise ConnectionError(f"WebSocket handshake failed: {status}")
+        status, *fields = head.split(b'\r\n')
+        headers = {}
+        for line in fields:
+            name, sep, value = line.partition(b':')
+            if not sep:
+                raise ConnectionError('malformed WebSocket upgrade')
+            headers.setdefault(name.lower(), []).append(value.strip())
+        accept = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest())
+        if (len(head) > MAX_HEADERS or status.split()[:2] != [b'HTTP/1.1', b'101'] or
+                headers.get(b'sec-websocket-accept') != [accept] or
+                headers.get(b'sec-websocket-protocol') != [protocol.encode()] or
+                b'sec-websocket-extensions' in headers or
+                [v.lower() for v in headers.get(b'upgrade', [])] != [b'websocket'] or
+                b'upgrade' not in [v.strip() for v in b','.join(headers.get(b'connection', [])).lower().split(b',')]):
+            raise ConnectionError('server did not confirm the WebSocket upgrade and arena subprotocol')
         self.sock.settimeout(None)
 
     def _read(self, n: int) -> bytes:
-        while len(self._buf) < n:
-            chunk = self.sock.recv(65536)
+        out, self._buf = bytearray(self._buf[:n]), self._buf[n:]
+        while len(out) < n:
+            chunk = self.sock.recv(min(n - len(out), 65536))
             if not chunk:
                 raise ConnectionError("connection closed")
-            self._buf += chunk
-        out, self._buf = self._buf[:n], self._buf[n:]
-        return out
+            out.extend(chunk)
+        return bytes(out)
 
     def _send_frame(self, opcode: int, payload: bytes) -> None:
         head = bytes([0x80 | opcode])
@@ -275,33 +323,47 @@ class WebSocket:
         self._send_frame(0x1, text.encode())
 
     def recv(self) -> str:
-        message = b""
+        message = bytearray()
+        fragments = 0
         while True:
             b0, b1 = self._read(2)
             opcode, fin = b0 & 0x0F, b0 & 0x80
             n = b1 & 0x7F
+            if b0 & 0x70 or b1 & 0x80 or opcode not in (0, 1, 8, 9, 10):
+                raise ConnectionError('invalid server frame')
+            if opcode >= 8 and (not fin or n > 125):
+                raise ConnectionError('invalid control frame')
             if n == 126:
                 n = struct.unpack("!H", self._read(2))[0]
+                if n < 126:
+                    raise ConnectionError('invalid frame length')
             elif n == 127:
                 n = struct.unpack("!Q", self._read(8))[0]
-            mask = self._read(4) if b1 & 0x80 else None
+                if n < 65536:
+                    raise ConnectionError('invalid frame length')
+            if opcode < 8:
+                if (opcode == 0) != bool(fragments) or n + len(message) > MAX_MESSAGE or fragments >= 1024:
+                    raise ConnectionError('invalid or oversized WebSocket message')
+                fragments += 1
             payload = self._read(n)
-            if mask:
-                payload = bytes(b ^ mask[i & 3] for i, b in enumerate(payload))
             if opcode == 0x8:
-                raise ConnectionError("server closed: " + payload[2:].decode(errors="replace"))
+                raise ConnectionError('server closed the WebSocket')
             if opcode == 0x9:
                 self._send_frame(0xA, payload)
                 continue
             if opcode == 0xA:
                 continue
-            message += payload
+            message.extend(payload)
             if fin:
                 return message.decode()
 
     def close(self) -> None:
         try:
             self._send_frame(0x8, struct.pack("!H", 1000))
+        except OSError:
+            pass
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
         self.sock.close()
@@ -357,6 +419,8 @@ class FiggieBot:
     def _call(self, reducer: str, args: list) -> None:
         if not self._ws:
             raise RuntimeError("not connected")
+        if len(self._requests) >= 256:
+            raise RuntimeError('too many pending reducer calls')
         rid = self._next_id
         self._next_id += 1
         self._requests[rid] = reducer
@@ -365,8 +429,24 @@ class FiggieBot:
         }}))
 
 
-def token_path(name: str) -> Path:
-    return Path(os.environ.get("POKERARENA_HOME", Path.home() / ".pokerarena")) / f"figgie-{name}.token"
+def token_path(name: str, host: str = HOST, database: str = DATABASE) -> Path:
+    if urlsplit(host).path not in ('', '/') or not re.fullmatch(r'[a-z0-9-]{1,128}', database):
+        raise ValueError('invalid arena host or database')
+    scope = hashlib.sha256(f'{_origin(host)}/{database}'.encode()).hexdigest()[:24]
+    return Path(os.environ.get("POKERARENA_HOME", Path.home() / ".pokerarena")) / f"figgie-{scope}-{clean_name(name)}.token"
+
+
+def save_token(path: Path, token: str) -> None:
+    if not _valid_token(token):
+        raise ValueError('invalid arena identity token')
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False, mode='w') as f:
+        try:
+            f.write(token)
+            f.close()  # mkstemp creates the new inode with 0600, even on replacement
+            os.replace(f.name, path)
+        finally:
+            Path(f.name).unlink(missing_ok=True)
 
 
 def clean_name(name: str) -> str:
@@ -380,7 +460,12 @@ def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int 
     bot.name = clean_name(bot.name)
     if not bot.name:
         raise SystemExit("give the bot a name made of letters, digits and _")
-    tok_file = token_path(bot.name)
+    host = host.removesuffix('/')
+    tok_file = token_path(bot.name, host, database)
+    legacy = tok_file.parent / f'figgie-{bot.name}.token'
+    if not tok_file.exists() and legacy.exists():
+        raise SystemExit(f'Existing identity is not tied to a server. If it belongs to {host}/{database}, '
+                         f'chmod 600 and move {legacy} to {tok_file}; otherwise use a new bot name.')
     backoff = 1.0
     played = 0
     while rounds is None or played < rounds:
@@ -394,14 +479,22 @@ def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int 
             continue
         backoff = 1.0
         bot._ws, bot._requests = ws, {}
-        inbox: queue.Queue = queue.Queue()
+        inbox: queue.Queue = queue.Queue(maxsize=16)
+        stopped = threading.Event()
 
-        def reader():
+        def reader(ws=ws, inbox=inbox, stopped=stopped):
+            def put(msg):
+                while not stopped.is_set():
+                    try:
+                        inbox.put(msg, timeout=0.25)
+                        return
+                    except queue.Full:
+                        pass
             try:
-                while True:
-                    inbox.put(json.loads(ws.recv()))
-            except (OSError, ConnectionError, ValueError) as err:
-                inbox.put({"_closed": str(err)})
+                while not stopped.is_set():
+                    put(json.loads(ws.recv()))
+            except (OSError, ValueError, RecursionError) as err:
+                put({"_closed": str(err)})
 
         threading.Thread(target=reader, daemon=True).start()
         cache = Cache()
@@ -412,9 +505,10 @@ def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int 
             closed = False
             while not closed and (rounds is None or played < rounds):
                 # Drain everything that arrived, then act at most once per tick.
+                batch = []
                 try:
-                    batch = [inbox.get(timeout=max(0.01, next_tick - time.time()))]
-                    while True:
+                    batch.append(inbox.get(timeout=max(0.01, next_tick - time.time())))
+                    while len(batch) < 16:
                         batch.append(inbox.get_nowait())
                 except queue.Empty:
                     pass
@@ -423,8 +517,7 @@ def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int 
                         print(f"disconnected: {msg['_closed']}", file=sys.stderr)
                         closed = True
                     elif "IdentityToken" in msg:
-                        tok_file.parent.mkdir(parents=True, exist_ok=True)
-                        tok_file.write_text(msg["IdentityToken"]["token"])
+                        save_token(tok_file, msg["IdentityToken"]["token"])
                         ws.send(json.dumps({"Subscribe": {"query_strings": SUBSCRIPTIONS, "request_id": 1}}))
                         bot._call("register", [bot.name])
                         if verbose:
@@ -462,12 +555,10 @@ def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int 
                         bot.on_update(s)
                     except Exception as err:  # a bug in the bot should not drop the connection
                         print(f"on_update raised {err!r}", file=sys.stderr)
-        except KeyboardInterrupt:
-            ws.close()
-            raise
         finally:
+            stopped.set()
             bot._ws = None
-        ws.close()
+            ws.close()
         time.sleep(1)
 
 

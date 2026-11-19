@@ -16,6 +16,7 @@
 import { ScheduleAt } from 'spacetimedb';
 import { Identity } from 'spacetimedb';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
+import { dealRandom } from '@pokerarena/shared/shuffle';
 
 const SUITS = ['spades', 'clubs', 'hearts', 'diamonds'] as const;
 type Suit = (typeof SUITS)[number];
@@ -159,7 +160,7 @@ const tickTimer = table({ name: 'tick_timer' }, {
 
 const spacetimedb = schema({
   player, figgieTable, seat, hand, quote, trade, roundResult, dealer, hosted, control, tickTimer,
-});
+}, { env: { FIGGIE_DEAL_KEY: t.string() } });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
@@ -174,8 +175,8 @@ function suitIndex(raw: string): number {
   const byName = SUITS.indexOf(s as Suit);
   if (byName >= 0) return byName;
   const short: Record<string, number> = { s: 0, c: 1, h: 2, d: 3, '♠': 0, '♣': 1, '♥': 2, '♦': 3, spade: 0, club: 1, heart: 2, diamond: 3 };
-  if (s in short) return short[s];
-  throw new SenderError(`unknown suit "${raw}" (use spades, clubs, hearts or diamonds)`);
+  if (Object.prototype.hasOwnProperty.call(short, s)) return short[s];
+  throw new SenderError('unknown suit (use spades, clubs, hearts or diamonds)');
 }
 
 function held(h: HandRow, suit: number): number {
@@ -195,19 +196,15 @@ function handArr(h: HandRow): number[] {
 // ---------- seating and dealing ----------
 
 function control0(ctx: Ctx) {
-  let row = ctx.db.control.id.find(0);
-  if (!row) {
-    row = { id: 0, paused: false, roundNo: 0, admin: ctx.sender };
-    ctx.db.control.insert(row);
-  }
+  const row = ctx.db.control.id.find(0);
+  if (!row) throw new SenderError('arena control is not initialized');
   return row;
 }
 
 function eligibleUsers(ctx: Ctx, now: number): string[] {
   const out: string[] = [];
   for (const p of ctx.db.player.iter()) {
-    if (p.kind === 'hosted') out.push(p.name);
-    else if (p.kind === 'remote' && (p.online || now - p.lastSeen < ONLINE_GRACE_MS)) out.push(p.name);
+    if (p.kind === 'remote' && (p.online || now - p.lastSeen < ONLINE_GRACE_MS)) out.push(p.name);
   }
   return out;
 }
@@ -227,7 +224,8 @@ function deal(ctx: Ctx): void {
   ctx.db.control.id.update({ ...ctl, roundNo });
   clearTables(ctx);
 
-  const users = ctx.random.shuffle(eligibleUsers(ctx, now));
+  const random = dealRandom(ctx.env.FIGGIE_DEAL_KEY, `${ctx.databaseIdentity.toHexString()}:${roundNo}:${ctx.timestamp.microsSinceUnixEpoch}`);
+  const users = random.shuffle(eligibleUsers(ctx, now));
   const tableCount = Math.max(1, Math.ceil(users.length / SEATS));
   const lineups: string[][] = Array.from({ length: tableCount }, () => []);
   users.forEach((name, i) => lineups[i % tableCount].push(name));
@@ -251,17 +249,17 @@ function deal(ctx: Ctx): void {
   }
 
   lineups.forEach((lineup, tableId) => {
-    const order = ctx.random.shuffle([...lineup]);
-    const twelve = ctx.random.integerInRange(0, 3);
+    const order = random.shuffle([...lineup]);
+    const twelve = random.index(4);
     const goal = PARTNER[twelve];
     const others = [0, 1, 2, 3].filter(s => s !== twelve);
-    const eight = others[ctx.random.integerInRange(0, 2)];
+    const eight = others[random.index(3)];
     const counts = [10, 10, 10, 10];
     counts[twelve] = 12;
     counts[eight] = 8;
     const deck: number[] = [];
     counts.forEach((n, s) => { for (let i = 0; i < n; i++) deck.push(s); });
-    ctx.random.shuffle(deck);
+    random.shuffle(deck);
     const starts: number[][] = [];
     order.forEach((name, i) => {
       const cards = deck.slice(i * HAND_SIZE, (i + 1) * HAND_SIZE);
@@ -496,30 +494,12 @@ function houseOrders(name: string, v: View): Order[] {
   return out;
 }
 
-function hostedOrders(source: string, v: View): Order[] {
-  const state = {
-    you: v.me,
-    hand: Object.fromEntries(SUITS.map((s, i) => [s, v.hand[i]])),
-    dealt: Object.fromEntries(SUITS.map((s, i) => [s, v.dealt[i]])),
-    cash: v.cash,
-    timeLeft: v.timeLeft,
-    book: Object.fromEntries(SUITS.map((s, i) => [s, { ...v.book[i] }])),
-    trades: v.trades.map(tr => ({ ...tr, suit: SUITS[tr.suit] })),
-    goalOdds: Object.fromEntries(SUITS.map((s, i) => [s, goalOdds(v.dealt)[i]])),
-  };
-  const fn = new Function('state', `"use strict";\n${source}\n; return typeof act === "function" ? act(state) : [];`);
-  const out = fn(state);
-  const list = Array.isArray(out) ? out : out ? [out] : [];
-  return list.slice(0, 4).filter((o: any) => o && typeof o.type === 'string');
-}
-
 function runBots(ctx: Ctx, tableId: number): void {
   const tbl = ctx.db.figgieTable.tableId.find(tableId)!;
   const now = nowMs(ctx);
   const seats = [...ctx.db.seat.tableId.filter(tableId)];
   for (const s of ctx.random.shuffle(seats)) {
-    if (s.kind === 'remote') continue;
-    if (ctx.random() > (s.kind === 'hosted' ? 0.8 : 0.45)) continue;
+    if (s.kind !== 'house' || !HOUSE.includes(s.name) || ctx.random() > 0.45) continue;
     const fresh = ctx.db.seat.seatKey.find(s.seatKey)!;
     const h = ctx.db.hand.seatKey.find(s.seatKey)!;
     const book = SUITS.map(suit => {
@@ -536,8 +516,7 @@ function runBots(ctx: Ctx, tableId: number): void {
     };
     let orders: Order[] = [];
     try {
-      if (s.kind === 'hosted') orders = hostedOrders(ctx.db.hosted.name.find(s.name)?.source ?? '', view);
-      else orders = houseOrders(s.name, view);
+      orders = houseOrders(s.name, view);
     } catch {
       bumpRejects(ctx, s.name);
       continue;
@@ -546,7 +525,7 @@ function runBots(ctx: Ctx, tableId: number): void {
       try {
         place(ctx, tableId, s.seatKey, order);
       } catch {
-        if (s.kind === 'hosted') bumpRejects(ctx, s.name);
+        bumpRejects(ctx, s.name);
       }
     }
   }
@@ -707,10 +686,17 @@ export const onConnect = spacetimedb.clientConnected(ctx => touch(ctx, true));
 export const onDisconnect = spacetimedb.clientDisconnected(ctx => touch(ctx, false));
 
 function cleanName(name: string): string {
-  const safe = String(name || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24);
-  if (!safe) throw new SenderError('pick a name made of letters, digits and _');
+  const safe = name.toLowerCase();
+  if (!/^[a-z0-9_]{1,24}$/.test(safe)) throw new SenderError('pick a name of 1–24 letters, digits and _');
   if (HOUSE.includes(safe)) throw new SenderError(`${safe} is a house bot, pick another name`);
   return safe;
+}
+
+function checkRegistration(ctx: Ctx): void {
+  for (const p of ctx.db.player.owner.filter(ctx.sender)) {
+    throw new SenderError(`this identity already plays as ${p.name}; one bot per identity`);
+  }
+  if (ctx.db.player.count() >= BigInt(HOUSE.length + 64)) throw new SenderError('arena registration is full');
 }
 
 /** Claim a bot name for this connection's identity. Seated at the next deal. */
@@ -719,16 +705,18 @@ export const register = spacetimedb.reducer({ name: t.string() }, (ctx, { name }
   const now = nowMs(ctx);
   const existing = ctx.db.player.name.find(safe);
   if (existing) {
-    if (!existing.owner.isEqual(ctx.sender)) throw new SenderError(`${safe} belongs to another identity`);
-    ctx.db.player.name.update({ ...existing, online: true, lastSeen: now });
+    if (!existing.owner.isEqual(ctx.sender)) throw new SenderError('name already reserved');
+    if (existing.kind === 'hosted') {
+      if (existing.tableId >= 0 && ctx.db.figgieTable.tableId.find(existing.tableId)?.phase === 'trading') throw new SenderError('reconnect after the bell to convert this seat');
+      ctx.db.hosted.name.delete(safe);
+    }
+    ctx.db.player.name.update({ ...existing, kind: 'remote', online: ctx.connectionId !== null, lastSeen: now });
     return;
   }
-  for (const p of ctx.db.player.owner.filter(ctx.sender)) {
-    throw new SenderError(`this identity already plays as ${p.name}; one bot per identity`);
-  }
+  checkRegistration(ctx);
   ctx.db.player.insert({
     name: safe, owner: ctx.sender, kind: 'remote', elo: 1500, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
-    trades: 0, edge: 0, goalCards: 0, rejects: 0, online: true, lastSeen: now, joinedAt: now, tableId: -1,
+    trades: 0, edge: 0, goalCards: 0, rejects: 0, online: ctx.connectionId !== null, lastSeen: now, joinedAt: now, tableId: -1,
   });
 });
 
@@ -747,6 +735,7 @@ function mySeat(ctx: Ctx) {
 }
 
 function guarded(ctx: Ctx, order: Order): void {
+  if (control0(ctx).paused) throw new SenderError('arena is paused');
   const s = mySeat(ctx);
   place(ctx, s.tableId, s.seatKey, order);
 }
@@ -773,37 +762,15 @@ export const myHand = spacetimedb.view({ name: 'my_hand', public: true }, t.arra
   ctx.from.hand.where(r => r.owner.eq(ctx.sender)).build()
 );
 
-/** Paste a JavaScript act(state) and the module runs it every tick, like a house bot. */
-export const hostBot = spacetimedb.reducer({ name: t.string(), source: t.string() }, (ctx, { name, source }) => {
-  const safe = cleanName(name);
-  if (source.length < 8 || source.length > 8000) throw new SenderError('paste a short act(state) function');
-  if (!/function\s+act\s*\(/.test(source) && !/act\s*=\s*\(/.test(source)) throw new SenderError('the code needs a function named act');
-  try {
-    new Function('state', `"use strict";\n${source}\n; return typeof act === "function" ? act : null;`);
-  } catch (err) {
-    throw new SenderError('that code does not parse: ' + String(err).slice(0, 120));
-  }
-  const now = nowMs(ctx);
-  const existing = ctx.db.player.name.find(safe);
-  if (existing && existing.kind !== 'hosted') throw new SenderError(`${safe} is taken`);
-  if (existing && !existing.owner.isEqual(ctx.sender)) throw new SenderError(`${safe} belongs to another identity`);
-  if (existing) ctx.db.player.name.update({ ...existing, lastSeen: now });
-  else {
-    ctx.db.player.insert({
-      name: safe, owner: ctx.sender, kind: 'hosted', elo: 1500, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
-      trades: 0, edge: 0, goalCards: 0, rejects: 0, online: true, lastSeen: now, joinedAt: now, tableId: -1,
-    });
-  }
-  if (ctx.db.hosted.name.find(safe)) ctx.db.hosted.name.update({ name: safe, source });
-  else ctx.db.hosted.insert({ name: safe, source });
-});
-
-/** Remove your bot (remote or hosted). */
+/** Remove your bot. The old private hosted table is retained for migration only. */
 export const leave = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   const p = ctx.db.player.name.find(name);
   if (!p || p.kind === 'house') return;
   const ctl = control0(ctx);
   if (!p.owner.isEqual(ctx.sender) && !ctl.admin.isEqual(ctx.sender)) throw new SenderError('not your bot');
+  if (p.tableId >= 0 && ctx.db.figgieTable.tableId.find(p.tableId)?.phase === 'trading') {
+    throw new SenderError('wait for the bell before removing a seated bot');
+  }
   ctx.db.player.name.delete(name);
   if (ctx.db.hosted.name.find(name)) ctx.db.hosted.name.delete(name);
 });

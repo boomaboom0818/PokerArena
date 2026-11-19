@@ -23,7 +23,6 @@ import json
 import mimetypes
 import threading
 import time
-import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -35,9 +34,6 @@ from .evaluator import CATEGORY_NAMES, category
 from .models import STREETS
 from .starter import starter_source
 from .storage import Store
-
-MAX_BODY = 64_000
-
 
 def _jsonable(row) -> dict:
     return {k: row[k] for k in row.keys()}
@@ -91,6 +87,7 @@ def bot_detail(store: Store, bot_id: str) -> dict | None:
 
 
 def list_matches(store: Store, limit: int = 40) -> list[dict]:
+    limit = max(0, min(limit, 200))  # SQLite treats a negative LIMIT as unlimited.
     rows = []
     for m in store.db.execute(
         "SELECT * FROM matches ORDER BY match_id DESC LIMIT ?", (limit,)):
@@ -108,6 +105,7 @@ def list_matches(store: Store, limit: int = 40) -> list[dict]:
 
 
 def list_hands(store: Store, *, limit=30, bot=None, match_id=None) -> list[dict]:
+    limit = max(0, min(limit, 100))
     sql = (
         "SELECT h.hand_id, h.match_id, h.hand_no, h.button, h.board, h.pot_total, h.showdown, "
         "m.big_blind FROM hands h JOIN matches m USING(match_id) WHERE 1=1"
@@ -199,9 +197,11 @@ def hand_payload(store: Store, hand_id: int) -> dict | None:
 
 
 CONNECT_GUIDE = {
-    "summary": "Download a starter, then run one command. Your bot sits with the built-ins and gets an Elo.",
+    "summary": "Run your bot on your own machine. It connects over WebSocket and sends game actions; no strategy is uploaded.",
     "repo": "https://github.com/boomaboom0818/PokerArena",
-    "join": "python -m pokerarena join {file}",
+    "join": "python -m pokerarena connect {file} --game 6-max",
+    "heads_up": "python -m pokerarena connect {file} --game heads-up",
+    "figgie": "python -m pokerarena figgie {file}",
     "serve": "python -m pokerarena serve",
     "minimal_bot": '''from pokerarena.bots import Bot
 from pokerarena.models import Action, Observation
@@ -230,7 +230,7 @@ class MyBot(Bot):
         "obs.players — every seat's stack, bet, folded, all-in, name.",
         "obs.history — every action in the hand so far, blinds included.",
     ],
-    "hooks": [
+    "local_tournament_hooks": [
         "on_match_start(info) — seat, opponent names, blinds, stack, hand count.",
         "on_hand_end(summary) — your net, the board, and showdown hole cards.",
         "self.rng is seeded by the arena. Use it instead of the global random module.",
@@ -674,21 +674,11 @@ def make_handler(store: Store, runner=None):
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.send_header("Cache-Control", f"public, max-age={cache}" if cache else "no-store")
             self.end_headers()
             self.wfile.write(body)
-
-        def _read_json(self) -> dict:
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
-                raise ValueError("body too large")
-            raw = self.rfile.read(n) if n else b"{}"
-            data = json.loads(raw.decode() or "{}")
-            if not isinstance(data, dict):
-                raise ValueError("JSON body must be an object")
-            return data
 
         def do_OPTIONS(self):
             self._send(204, {})
@@ -704,17 +694,14 @@ def make_handler(store: Store, runner=None):
                 else:
                     with db_lock:
                         self._route("GET")
-            except Exception as exc:
-                self._send(500, {"error": str(exc), "trace": traceback.format_exc(limit=2)})
+            except (ValueError, OverflowError):
+                self._send(400, {"error": "invalid request parameter"})
+            except Exception:
+                self._send(500, {"error": "internal server error"})
 
         def do_POST(self):
-            try:
-                with db_lock:
-                    self._route("POST")
-            except ValueError as exc:
-                self._send(400, {"error": str(exc)})
-            except Exception as exc:
-                self._send(500, {"error": str(exc)})
+            self.close_connection = True
+            self._send(405, {"error": "read-only API; use GET"})
 
         def _route(self, method: str):
             parsed = urlparse(self.path)
