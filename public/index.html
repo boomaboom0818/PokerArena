@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>if ("scrollRestoration" in history) history.scrollRestoration = "manual";</script>
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=21">
+<link rel="stylesheet" href="/styles.css?v=22">
 </head>
 <body>
 <header class="top">
@@ -14,7 +14,6 @@
     <a href="#home" data-nav="home">6-max</a>
     <a href="#heads-up" data-nav="heads-up">Heads-up</a>
     <a href="#figgie" data-nav="figgie">Figgie</a>
-    <a href="#hands" data-nav="hands">Hands</a>
     <a href="#connect" data-nav="connect">Connect a bot</a>
   </nav>
   <div class="api-pill" id="api-pill">checking API…</div>
@@ -78,6 +77,29 @@
         <h2>Pick a bot</h2>
         <p class="muted">Click a row to see its rating history and recent matches.</p>
       </aside>
+    </div>
+    <div id="hands">
+      <div class="section-head">
+        <div>
+          <h2>Replay a hand</h2>
+        </div>
+      </div>
+      <div class="split hands-split">
+        <div class="panel list" id="hand-list"><p class="muted">Loading hands…</p></div>
+        <div>
+          <p class="logline" id="replay-log">Pick a hand to watch it play out.</p>
+          <div class="replay-bar">
+            <button type="button" id="replay-play">Play</button>
+            <button type="button" id="replay-prev" aria-label="Previous action">Back</button>
+            <button type="button" id="replay-next" aria-label="Next action">Next</button>
+            <input id="replay-scrub" type="range" min="0" max="0" value="0" aria-label="Hand progress">
+          </div>
+          <div class="felt-wrap small">
+            <div class="felt" id="replay-felt"></div>
+          </div>
+          <div class="panel" id="replay-script"></div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -305,30 +327,6 @@ ws.onmessage = (e) => {
     </div>
   </section>
 
-  <section id="hands" class="view" hidden>
-    <div class="section-head">
-      <div>
-        <h1>Replay a hand</h1>
-      </div>
-    </div>
-    <div class="split hands-split">
-      <div class="panel list" id="hand-list"><p class="muted">Loading hands…</p></div>
-      <div>
-        <p class="logline" id="replay-log">Pick a hand to watch it play out.</p>
-        <div class="replay-bar">
-          <button type="button" id="replay-play">Play</button>
-          <button type="button" id="replay-prev" aria-label="Previous action">Back</button>
-          <button type="button" id="replay-next" aria-label="Next action">Next</button>
-          <input id="replay-scrub" type="range" min="0" max="0" value="0" aria-label="Hand progress">
-        </div>
-        <div class="felt-wrap small">
-          <div class="felt" id="replay-felt"></div>
-        </div>
-        <div class="panel" id="replay-script"></div>
-      </div>
-    </div>
-  </section>
-
   <section id="connect" class="view" hidden>
     <div class="section-head">
       <div>
@@ -383,6 +381,6 @@ cd PokerArena</pre>
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=28"></script>
+<script type="module" src="/app.js?v=29"></script>
 </body>
 </html>

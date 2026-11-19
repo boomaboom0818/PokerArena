@@ -49,11 +49,10 @@ function cardEl(code, large) {
 
 function route() {
   let name = (location.hash || "#home").slice(1) || "home";
-  if (name === "rankings" || name === "live") name = "home";
+  if (name === "rankings" || name === "live" || name === "hands") name = "home";
   $$(".view").forEach((v) => { v.hidden = v.id !== name; });
   $$("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name));
   window.scrollTo(0, 0);
-  if (name === "hands" && !$("#hand-list").dataset.loaded) loadHands();
   if (name === "connect" && !$("#join-form").dataset.bound) loadConnect();
   if (name === "home") startBroadcast();
   else stopBroadcast();
@@ -61,7 +60,7 @@ function route() {
   else stopHeadsUp();
   if (name === "figgie") startFiggie();
   else stopFiggie();
-  if (name !== "hands") stopReplay();
+  if (name !== "home") stopReplay();
 }
 
 function emptyFrame() {
@@ -72,6 +71,7 @@ async function boot() {
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   window.scrollTo(0, 0);
   route();
+  loadHands();
   requestAnimationFrame(() => window.scrollTo(0, 0));
   window.addEventListener("hashchange", route);
   try {
@@ -166,11 +166,12 @@ async function selectBot(name) {
           <span class="${m.net_chips >= 0 ? "up" : "down"}">${money(m.net_chips)}</span>
           · Elo ${Math.round(m.elo_before)} → ${Math.round(m.elo_after)}
         </div>`).join("") || "<p class='muted'>No matches yet.</p>"}
-      <p><a href="#hands" id="see-hands">See this bot's hands</a></p>`;
+      <p><a href="#home" id="see-hands">See this bot's hands</a></p>`;
     card.dataset.ready = name;
-    $("#see-hands").addEventListener("click", () => {
-      location.hash = "hands";
+    $("#see-hands").addEventListener("click", (ev) => {
+      ev.preventDefault();
       loadHands(name);
+      $("#hands").scrollIntoView({ behavior: "smooth" });
     });
   } catch (err) {
     card.innerHTML = `<h2>${name}</h2><p>${err.message}</p>`;
