@@ -431,3 +431,12 @@ table.fg-results tr { cursor: default; }
   .fg-ring { width: 86px; height: 86px; }
   .fg-clock { width: 72px; height: 72px; font-size: 1.3rem; }
 }
+
+/* Match history and replay scripts scroll in place instead of stretching the page. */
+.hands-split { align-items: flex-start; }
+#hand-list, #fg-rounds { max-height: 560px; overflow-y: auto; overscroll-behavior: contain; }
+#replay-script { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+@media (max-width: 800px) {
+  #hand-list, #fg-rounds { max-height: 340px; }
+  #replay-script { max-height: 220px; }
+}
