@@ -393,7 +393,10 @@ table.fg-book tr.goal { background: rgba(228, 194, 122, 0.1); }
 .fg-chart .marker { fill: none; stroke: var(--gold); stroke-width: 2; }
 .fg-legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 0.8rem; margin-top: 6px; }
 .fg-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
-.fg-tape { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; font-variant-numeric: tabular-nums; }
+.fg-tape {
+  list-style: none; margin: 0; padding: 0; padding-inline-end: 14px;
+  max-height: 360px; overflow-y: auto; scrollbar-gutter: stable; font-variant-numeric: tabular-nums;
+}
 .fg-tape li { display: grid; grid-template-columns: 2.8rem 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); margin: 0; font-size: 0.92rem; }
 .fg-tape b { font-weight: 500; }
 .fg-tape .price { color: var(--gold); }
