@@ -1,45 +1,50 @@
-# pokerarena — bot arena for Hold'em and Figgie
+# PokerArena
 
-Pure-Python (3.10+, **no dependencies**) arena where many bots play 6-handed no-limit
-Hold'em at the same time, get a multiplayer **Elo** rating, and leave behind a
-**SQLite database** with every hand and every decision, ready for training new bots.
+PokerArena is a live competition for self-hosted bots in **6-max no-limit Hold’em**,
+**heads-up no-limit Hold’em**, and **Figgie**, Jane Street’s trading card game.
+Run your strategy on your own machine and connect over WebSocket. The arena deals cards,
+validates actions, and tracks Elo. **You send actions, not source code.**
 
+[Watch the arena](https://pokerarena-psi.vercel.app/) · [Connect a bot](https://pokerarena-psi.vercel.app/#connect)
+
+## Quick start
+
+The bot clients and local tournament engine use Python 3.10+ and require no third-party Python packages.
+
+```sh
+git clone https://github.com/boomaboom0818/PokerArena.git
+cd PokerArena
 ```
-python -m pokerarena new my_bot.py                                 # starter file
-python -m pokerarena connect my_bot.py --game 6-max                 # live arena; keep running
-python -m pokerarena connect my_bot.py --game heads-up              # live heads-up arena
-python -m pokerarena join my_bot.py                                # offline practice
-python -m pokerarena run --bot-dir bots_user --builtins --rounds 20   # play
-python -m pokerarena leaderboard                                      # ratings + stats
-python -m pokerarena serve                                            # website + API on :8787
-python -m pokerarena replay                                           # print a hand
-python -m pokerarena export decisions train.jsonl --top 3             # training data
-python -m unittest discover -s tests                                  # tests
+
+**Hold’em:** Create a starter, edit `act(obs)`, and choose a game. Replace `my_bot.py` with a unique filename to get a different default bot name, or pass `--name` when connecting.
+
+```sh
+python -m pokerarena new my_bot.py
+python -m pokerarena connect my_bot.py --game 6-max
+# Or play heads-up with the same bot:
+python -m pokerarena connect my_bot.py --game heads-up
 ```
 
-## Website
+**Figgie:** Create a starter, edit `on_update(state)`, and connect:
 
-[public/](public/) is a static site: Elo rankings, a spectator view of every
-table the field fills, stored-hand replay, and a connect page. Six bots is
-one table. A seventh bot opens the next one.
-`python -m pokerarena serve` keeps the tables playing. `GET /api/live` returns
-the action the bots just took. The hosted site has no long-running process,
-so it falls back to the shared clock. A visitor cannot
-deal, pause, pick bots, or change the seed. `python -m pokerarena serve`
-hosts the site and the JSON API together. The same API is what
-[Vercel](vercel.json) runs from [api/index.py](api/index.py).
+```sh
+python -m pokerarena figgie-new my_figgie_bot.py
+python -m pokerarena figgie my_figgie_bot.py
+```
 
-Deploy by importing this repo in the Vercel dashboard (framework preset: Other).
-The committed [data/sample.db](data/sample.db) is the leaderboard the hosted
-site reads. After a real run, replace that file (or set `POKERARENA_DB`) and
-redeploy. To watch a match as it is written, run `serve` against your own
-`arena.db` and open `http://127.0.0.1:8787` directly. The archive API is same-origin;
-the three live tables connect to their fixed Maincloud databases.
+Keep the process running to play. The client saves a private identity token for reconnects.
+For other languages, use the WebSocket protocol on the [Connect a bot page](https://pokerarena-psi.vercel.app/#connect).
+
+## Watch and replay
+
+The [website](https://pokerarena-psi.vercel.app/) shows live tables and rankings for all three games.
+Figgie adds an order book, trade tape, and round replays. The Hold’em replay panel reads recorded
+hands from the site's SQLite archive; the live tables and standings come from SpacetimeDB.
 
 ## Figgie ([spacetimedb-figgie/](spacetimedb-figgie/src/index.ts))
 
-Jane Street's trading card game, live around the clock in the `figgie-arena`
-SpacetimeDB database. Four bots sit at a table; a fifth opens another table.
+Jane Street's trading card game runs in the `figgie-arena` SpacetimeDB database.
+Four bots sit at a table; a fifth opens another table.
 
 * 40 cards: one suit has 12, two have 10, one has 8. The **goal suit** is the other suit of
   the 12-card suit's colour, so it has 8 or 10 cards. Nobody is told which.
@@ -52,12 +57,7 @@ SpacetimeDB database. Four bots sit at a table; a fifth opens another table.
   private until the bell; every round is kept in `round_result` (dealt and final hands, the
   full tape, payouts, trade edge, Elo change) for replays and analysis.
 
-Connect a bot from Python (standard library only — the WebSocket client is built in):
-
-```
-python -m pokerarena figgie-new my_figgie_bot.py     # starter file
-python -m pokerarena figgie my_figgie_bot.py         # trade in the live arena
-```
+Example Figgie strategy:
 
 ```python
 from pokerarena.figgie import FiggieBot
@@ -122,15 +122,25 @@ not seated; register a new name, or ask the admin to remove the old row before r
 Previously public bot source cannot be made retroactively private. Rotate any secret it contained.
 Check the public standings and owner controls before the admin resumes games with `set_paused`.
 
-## How the arena works
+## Local Hold’em tournaments
+
+Run offline practice or generate hand histories and training data in SQLite. These commands do not
+submit a bot to the live arena or change its public rating.
+
+```sh
+python -m pokerarena join my_bot.py
+python -m pokerarena run --bot-dir bots_user --builtins --rounds 20
+python -m pokerarena leaderboard
+python -m pokerarena replay
+python -m pokerarena export decisions train.jsonl --top 3
+```
 
 * **Round** = every bot sits at one 6-seat table (random seats). With 12 bots that is 2 tables, with 60
   bots 10 tables. Leftover bots are re-used to fill the last table. All tables of a round are played
   **in parallel in separate processes**.
 * **Match** = one table session of `--hands` hands (default 600, rounded up to a multiple of 6 so every
   bot gets the same number of turns on the button). The button rotates every hand.
-* **Stacks reset to 100 BB before every hand.** Hands are therefore independent, low-variance samples
-  and the training data is i.i.d.-ish. Blinds are 50/100 chips.
+* **Stacks reset to 100 BB before every hand.** Blinds are 50/100 chips.
 * Matches are **deterministic** given `--seed` (deck + each bot's `self.rng`).
 * `--matchmaking elo` seats bots with similar ratings together; `random` (default) is best for unbiased
   ratings.
@@ -144,7 +154,7 @@ pre-round snapshot, so the result doesn't depend on which finished first. Start 
 The leaderboard also shows **bb/100 with a 95 % error bar** — poker is noisy, so read Elo together with
 the confidence interval; run more rounds to tighten it.
 
-## Write a bot
+## Write a Hold’em bot
 
 ```python
 from pokerarena.bots import Bot
@@ -157,17 +167,18 @@ class MyBot(Bot):
         return Action.call() if obs.pot_odds < 0.25 else Action.fold()
 ```
 
-Put the file in a directory and pass `--bot-dir that_dir` (or `--bots path/file.py:MyBot`,
-`--bots package.module:MyBot`). See [bots_user/example_bot.py](bots_user/example_bot.py) and the built-ins in
-[bots/builtin.py](pokerarena/bots/builtin.py).
+Pass the file to `connect` for live play. For local tournaments, use `--bot-dir that_dir`,
+`--bots path/file.py:MyBot`, or `--bots package.module:MyBot` with `run`.
+See [the example bot](bots_user/example_bot.py) and [the built-in strategies](pokerarena/bots/builtin.py).
 
 `Observation` ([models.py](pokerarena/models.py)) gives hole cards, board, pot, `to_call`, `stack`,
 position, `can_raise`/`min_raise_to`/`max_raise_to`, all players' stacks/bets/fold status/names and the
 full action history of the hand. Cards are ints `rank*4+suit`; use `pokerarena.cards.card_str`.
-Raise amounts mean **raise-to** (total bet on the street). Optional hooks: `on_match_start`, `on_hand_end`
-(reveals showdown cards). A fresh instance is created per match, so attributes persist across its hands.
+Raise amounts mean **raise-to** (total bet on the street). Local tournaments also support the
+`on_match_start` and `on_hand_end` hooks and create a fresh bot instance per match. The live Python
+connector calls `act` and keeps the same instance for the life of the process.
 
-Safety: an exception in `act` or an illegal action never crashes the match — it is corrected (illegal
+In local tournaments, an exception in `act` or an illegal action is corrected (illegal
 check → fold, out-of-range raise → clamped, crash → check/fold), counted in `match_players.errors` and
 flagged in `actions.corrected`; tracebacks go to the `errors` table.
 Bot name = identity on the leaderboard; give each new version a new name.
@@ -226,13 +237,29 @@ Because *all* hole cards are stored, the data supports both honest-information m
 acting seat's `hole`) and "oracle" training (e.g. value networks, equity targets).
 You can also embed the engine directly (`pokerarena.engine.Table`) for self-play training loops.
 
-## Layout
+## Development
+
+```sh
+python -m unittest discover -s tests
+npm ci --prefix arena-shared
+node --test tests/*.test.mjs   # Node.js 22.18+
+python -m pokerarena serve   # website and JSON API at http://127.0.0.1:8787
+```
+
+The local website serves the archive API from your SQLite database, but its live tabs still point to
+Maincloud. Deploy the static site and archive API via [Vercel](vercel.json); production uses
+[the sample database](data/sample.db) for archived hands by default, or `POKERARENA_DB` if configured.
+
+### Layout
 
 ```
 pokerarena/engine.py     betting rules, side pots, showdown     evaluator.py  7-card evaluator
 pokerarena/arena.py      matchmaking + parallel rounds          elo.py        multiplayer Elo
 pokerarena/storage.py    schema, writer, leaderboard            dataset.py    exports / iterators
 pokerarena/bots/         Bot base class, loader, built-ins      features.py   optional encoders
+public/                  Spectator site and connection guides
+arena-shared/            Shared live Hold’em engine and SpacetimeDB module code
+spacetimedb*/            Deployable modules for 6-max, heads-up, and Figgie
 ```
 
 ## Notes / possible extensions
