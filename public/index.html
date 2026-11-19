@@ -3,23 +3,94 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=27">
+<title>Poker Arena — live Hold’em and Figgie bot competition</title>
+<meta name="description" content="Watch bots compete in 6-max Hold’em, heads-up Hold’em, and Figgie. Run your own strategy and join Poker Arena over WebSocket.">
+<link rel="stylesheet" href="/styles.css?v=28">
 </head>
 <body>
 <header class="top">
   <a class="brand" href="#home">Poker<span>Arena</span></a>
-  <nav>
-    <a href="#home" data-nav="home">6-max</a>
+  <nav aria-label="Main navigation">
+    <a href="#home" data-nav="home">Home</a>
+    <a href="#6-max" data-nav="six-max">6-max</a>
     <a href="#heads-up" data-nav="heads-up">Heads-up</a>
     <a href="#figgie" data-nav="figgie">Figgie</a>
     <a href="#connect" data-nav="connect">Connect a bot</a>
   </nav>
-  <div class="api-pill" id="api-pill">checking API…</div>
 </header>
 
 <main>
   <section id="home" class="view">
+    <div class="landing-hero">
+      <div class="landing-intro">
+        <p class="kicker">The bot competition</p>
+        <h1 class="landing-title" aria-label="Poker Arena">
+          <span class="title-word" aria-hidden="true"><span>P</span><span>O</span><span>K</span><span>E</span><span>R</span></span>
+          <span class="title-word" aria-hidden="true"><span>A</span><span>R</span><span>E</span><span>N</span><span>A</span></span>
+        </h1>
+        <p class="landing-tagline">Write the bot.<br>Let it play.</p>
+        <p class="landing-description">Poker Arena is a place for bots to compete in Hold’em and Figgie. Watch the tables, follow the Elo rankings, or run a bot on your own machine and send its decisions to the arena over WebSocket.</p>
+        <div class="hero-actions landing-actions">
+          <a class="button" href="#connect">Connect your bot</a>
+          <a class="button quiet" href="#games">Explore the games <span aria-hidden="true">↓</span></a>
+        </div>
+      </div>
+      <div class="landing-art" aria-hidden="true">
+        <div class="landing-fan"><span>♠</span><span>♥</span><span>♣</span></div>
+      </div>
+    </div>
+
+    <section id="games" class="landing-games" aria-labelledby="games-title">
+      <p class="kicker">At the tables</p>
+      <h2 id="games-title">Pick a game to watch</h2>
+      <div class="game-grid">
+        <article class="game-preview" data-preview="6-max">
+          <div class="preview-art preview-six" aria-hidden="true"><span class="preview-cards"><b>A♠</b><b>J<span>♥</span></b><b>7♣</b></span></div>
+          <div class="preview-copy">
+            <p class="kicker">Six bots · No-limit</p>
+            <h3>6-max Hold’em</h3>
+            <p>Six bots share a table. Watch the hand unfold from blinds to showdown.</p>
+            <p class="preview-status" data-state="loading">Checking status…</p>
+            <p class="preview-note" hidden></p>
+            <a class="button quiet" href="#6-max">Watch 6-max <span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="game-preview" data-preview="heads-up">
+          <div class="preview-art preview-duel" aria-hidden="true"><span class="preview-cards"><b>K♣</b><i>VS</i><b>Q<span>♦</span></b></span></div>
+          <div class="preview-copy">
+            <p class="kicker">Two bots · No-limit</p>
+            <h3>Heads-up Hold’em</h3>
+            <p>One opponent, no place to hide. See how two strategies adapt hand after hand.</p>
+            <p class="preview-status" data-state="loading">Checking status…</p>
+            <p class="preview-note" hidden></p>
+            <a class="button quiet" href="#heads-up">Watch heads-up <span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="game-preview" data-preview="figgie">
+          <div class="preview-art preview-market" aria-hidden="true"><span class="preview-cards"><b>♠</b><b><span>♥</span></b><b>♣</b><b><span>♦</span></b></span></div>
+          <div class="preview-copy">
+            <p class="kicker">Four or five bots · Trading</p>
+            <h3>Figgie</h3>
+            <p>Buy and sell suits while the clock runs. Follow the order book and see the goal suit revealed at the bell.</p>
+            <p class="preview-status" data-state="loading">Checking status…</p>
+            <p class="preview-note" hidden></p>
+            <a class="button quiet" href="#figgie">Watch Figgie <span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="landing-connect" aria-labelledby="landing-connect-title">
+      <div>
+        <p class="kicker">Take a seat</p>
+        <h2 id="landing-connect-title">Bring your own bot</h2>
+        <p>Pick a game, start from the Python example or use your own WebSocket client, and keep your bot running. The arena deals the cards and keeps score; your strategy stays on your machine.</p>
+      </div>
+      <a class="button" href="#connect">Open the connection guide <span aria-hidden="true">→</span></a>
+    </section>
+  </section>
+
+  <section id="six-max" class="view" hidden>
     <div class="mast">
       <div>
         <h1>On the air</h1>
@@ -365,6 +436,6 @@ ws.onmessage = (e) => {
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=34"></script>
+<script type="module" src="/app.js?v=35"></script>
 </body>
 </html>

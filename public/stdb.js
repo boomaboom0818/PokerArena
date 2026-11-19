@@ -2,11 +2,12 @@ export const HOST = "https://maincloud.spacetimedb.com";
 const DB = "poker-arena";
 const HU_DB = "poker-heads-up";
 
-function sql(query, db = DB) {
+function sql(query, db = DB, signal) {
   return fetch(HOST + "/v1/database/" + db + "/sql", {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
     body: query,
+    signal,
   }).then(async (res) => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || res.statusText || "database offline");
@@ -84,3 +85,24 @@ export async function leaderboard(db = DB) {
 }
 
 export const headsUpDb = HU_DB;
+
+export async function arenaPreview(game, now = Date.now()) {
+  const source = {
+    "6-max": [DB, "SELECT phase, log FROM table_state"],
+    "heads-up": [HU_DB, "SELECT phase, log FROM table_state"],
+    figgie: ["figgie-arena", "SELECT phase, ends_at, next_at, last_trade FROM figgie_table"],
+  }[game];
+  const [db, query] = source;
+  const signal = AbortSignal.timeout(8000);
+  const [result, control] = await Promise.all([sql(query, db, signal), sql("SELECT paused FROM control", db, signal)]);
+  if (rows(control)[0]?.paused) return { state: "paused", label: "Arena paused", note: "Tables are not running right now." };
+  const tables = rows(result);
+  const live = tables.filter(t => game === "figgie" ? t.phase === "trading" && t.ends_at > now : t.phase !== "result");
+  const table = live.find(t => t.log || t.last_trade) || live[0];
+  if (table) return { state: "live", label: `${live.length} ${game === "figgie" ? "trading" : "live"} ${live.length === 1 ? "table" : "tables"}`,
+    note: table.log || table.last_trade || (game === "figgie" ? "Trading is open." : "A hand is in progress.") };
+  const resultTable = tables.find(t => game === "figgie" ? t.phase === "reveal" && t.next_at > now : t.phase === "result");
+  if (resultTable) return { state: "break", label: game === "figgie" ? "Between rounds" : "Between hands", note: resultTable.log || resultTable.last_trade };
+  const seats = game === "6-max" ? "Six" : game === "heads-up" ? "Two" : "Four or five";
+  return { state: "waiting", label: "Waiting for bots", note: `${seats} bots are needed to start a table.` };
+}

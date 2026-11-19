@@ -1,5 +1,5 @@
-import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js?v=4";
-import { startFiggie, stopFiggie } from "./figgie.js?v=6";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=5";
+import { startFiggie, stopFiggie } from "./figgie.js?v=7";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -20,6 +20,9 @@ let selectedBot = null;
 let live = { table: 0, cursor: -1, timer: null };
 let replay = { frames: [], index: 0, timer: null, id: null };
 const showHoles = true;
+let overviewTimer = null;
+let overviewBusy = false;
+let sixMaxReady = false;
 
 function api(path, opts) {
   return fetch(path, opts).then(async (res) => {
@@ -47,43 +50,78 @@ function cardEl(code, large) {
 }
 
 function route() {
-  let name = (location.hash || "#home").slice(1) || "home";
-  if (name === "rankings" || name === "live" || name === "hands") name = "home";
+  const hash = location.hash.slice(1);
+  let name = hash || "home";
+  if (["6-max", "rankings", "live", "hands"].includes(name)) name = "six-max";
+  if (!["six-max", "heads-up", "figgie", "connect"].includes(name)) name = "home";
   $$(".view").forEach((v) => { v.hidden = v.id !== name; });
-  $$("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === name));
-  window.scrollTo(0, 0);
+  $$("[data-nav]").forEach((a) => {
+    const active = a.dataset.nav === name;
+    a.classList.toggle("active", active);
+    if (active) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  });
+  if (["games", "rankings", "hands"].includes(hash)) $("#" + hash).scrollIntoView();
+  else window.scrollTo(0, 0);
   if (name === "connect") bindConnect();
-  if (name === "home") startBroadcast();
-  else stopBroadcast();
+  if (name === "home") startOverview();
+  else stopOverview();
+  if (name === "six-max") {
+    if (!sixMaxReady) {
+      sixMaxReady = true;
+      bindRankings();
+      loadHands();
+      refreshLeaderboard();
+    }
+    startBroadcast();
+  } else {
+    stopBroadcast();
+    stopReplay();
+  }
   if (name === "heads-up") startHeadsUp();
   else stopHeadsUp();
   if (name === "figgie") startFiggie();
   else stopFiggie();
-  if (name !== "home") stopReplay();
+}
+
+async function refreshOverview() {
+  if (overviewBusy || document.hidden) return;
+  overviewBusy = true;
+  try {
+    await Promise.all($$("[data-preview]").map(async card => {
+      const data = await arenaPreview(card.dataset.preview).catch(() => ({
+        state: "offline", label: "Status unavailable", note: "You can still open the arena page.",
+      }));
+      const status = $(".preview-status", card);
+      status.dataset.state = data.state;
+      status.textContent = data.label;
+      const note = $(".preview-note", card);
+      note.textContent = data.note || "";
+      note.hidden = !data.note;
+    }));
+  } finally { overviewBusy = false; }
+}
+
+function startOverview() {
+  if (overviewTimer) return;
+  refreshOverview();
+  overviewTimer = setInterval(refreshOverview, 15000);
+}
+
+function stopOverview() {
+  clearInterval(overviewTimer);
+  overviewTimer = null;
 }
 
 function emptyFrame() {
   return { phase: "deal", board: [], pot: 0, seats: [], actor: null };
 }
 
-async function boot() {
+function boot() {
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   window.scrollTo(0, 0);
   route();
-  loadHands();
-  requestAnimationFrame(() => window.scrollTo(0, 0));
   window.addEventListener("hashchange", route);
-  try {
-    await liveTable();
-    $("#api-pill").textContent = "arena online";
-    $("#api-pill").className = "api-pill ok";
-  } catch (err) {
-    $("#api-pill").textContent = "API offline";
-    $("#api-pill").className = "api-pill bad";
-    $("#api-pill").title = String(err);
-  }
-  bindRankings();
-  await refreshLeaderboard();
 }
 
 function bindRankings() {
@@ -165,7 +203,7 @@ async function selectBot(name) {
           <span class="${m.net_chips >= 0 ? "up" : "down"}">${money(m.net_chips)}</span>
           · Elo ${Math.round(m.elo_before)} → ${Math.round(m.elo_after)}
         </div>`).join("") || "<p class='muted'>No matches yet.</p>"}
-      <p><a href="#home" id="see-hands">See this bot's hands</a></p>`;
+      <p><a href="#hands" id="see-hands">See this bot's hands</a></p>`;
     card.dataset.ready = name;
     $("#see-hands").addEventListener("click", (ev) => {
       ev.preventDefault();
@@ -546,7 +584,7 @@ async function openHand(id) {
   });
   $("#replay-play").textContent = "Play";
   showReplay(0);
-  playReplay();
+  if (!$("#six-max").hidden) playReplay();
 }
 
 function bindConnect() {
