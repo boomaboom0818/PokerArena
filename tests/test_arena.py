@@ -5,7 +5,6 @@ from pokerarena.bots import BotSpec, builtin_specs
 from pokerarena.bots.base import Bot
 from pokerarena.cards import parse_cards
 from pokerarena.dataset import iter_decisions, iter_hands
-from pokerarena.elo import EloConfig, table_deltas
 from pokerarena.engine import Table
 from pokerarena.evaluator import evaluate
 from pokerarena.models import Action
@@ -134,34 +133,14 @@ class Engine(unittest.TestCase):
             self.assertEqual(h.board, [])
 
 
-class Elo(unittest.TestCase):
-    def test_zero_sum_and_direction(self):
-        names = list("abcdefg")
-        ratings = {n: 1500.0 for n in names}
-        profit = {n: float(i) for i, n in enumerate(names)}  # g best
-        d = table_deltas(ratings, profit, {n: 100 for n in names}, EloConfig())
-        self.assertAlmostEqual(sum(d.values()), 0.0)
-        self.assertGreater(d["g"], 0)
-        self.assertLess(d["a"], 0)
-        self.assertAlmostEqual(d["g"], 16 * 0.5 * 6 / 6 * 1, places=6)  # wins all 6 pairs: K*0.5
-
-    def test_upset_moves_more(self):
-        ratings = {"hi": 1800.0, "lo": 1200.0}
-        cfg = EloConfig(k=16)
-        favourite_wins = table_deltas(ratings, {"hi": 5, "lo": 0}, {"hi": 99, "lo": 99}, cfg)
-        upset = table_deltas(ratings, {"hi": 0, "lo": 5}, {"hi": 99, "lo": 99}, cfg)
-        self.assertGreater(upset["lo"], favourite_wins["hi"])
-
-
 class Storage(unittest.TestCase):
     def test_roundtrip_and_exports(self):
         specs = builtin_specs(["random", "maniac", "calling_station", "nit", "tag", "lag", "rock"])
         store = Store(":memory:")
         for s in specs:
-            store.register_bot(s.name, "{}", "", 1500.0)
+            store.register_bot(s.name, "{}", "")
         res = Table([s.build() for s in specs], [s.name for s in specs], seed=9).run(70)
-        before = {s.name: 1500.0 for s in specs}
-        store.save_match(1, 1, 0, res, before, {n: 1500.0 + i for i, n in enumerate(before)})
+        store.save_match(1, 1, 0, res)
         n_hands = store.db.execute("SELECT COUNT(*) FROM hands").fetchone()[0]
         self.assertEqual(n_hands, 70)
         self.assertEqual(store.db.execute("SELECT COUNT(*) FROM hand_players").fetchone()[0], 70 * 7)
@@ -178,14 +157,43 @@ class Storage(unittest.TestCase):
         self.assertEqual(len(hands[0]["players"]), 7)
         lb = store.leaderboard()
         self.assertEqual(len(lb), 7)
+        # ranked by total chips won, which is each bot's net for the match
+        self.assertEqual([r["chips"] for r in lb], sorted(res.net_by_seat, reverse=True))
+        self.assertEqual({r["bot"]: r["chips"] for r in lb}, dict(zip(res.names, res.net_by_seat)))
         top = list(iter_decisions(store, top=1))
         self.assertEqual({r["bot_id"] for r in top}, {lb[0]["bot"]})
+
+    def test_old_elo_database_is_migrated(self):
+        import os
+        import sqlite3
+        import tempfile
+
+        path = os.path.join(tempfile.mkdtemp(), "old.db")
+        old = sqlite3.connect(path)
+        old.executescript("""
+            CREATE TABLE bots (bot_id TEXT PRIMARY KEY, spec_json TEXT, description TEXT, elo REAL NOT NULL,
+                matches INTEGER NOT NULL DEFAULT 0, hands INTEGER NOT NULL DEFAULT 0, first_seen TEXT, last_played TEXT);
+            CREATE TABLE match_players (match_id INTEGER, seat INTEGER, bot_id TEXT, net_chips INTEGER,
+                bb_per_100 REAL, rank INTEGER, elo_before REAL, elo_after REAL, errors INTEGER,
+                PRIMARY KEY (match_id, seat));
+            CREATE TABLE rating_history (bot_id TEXT, match_id INTEGER, elo_before REAL, elo_after REAL);
+            INSERT INTO bots(bot_id, elo, matches, hands) VALUES ('a', 1600, 1, 6), ('b', 1400, 1, 6);
+            INSERT INTO match_players VALUES (1, 0, 'a', -300, 0, 2, 1500, 1600, 0), (1, 1, 'b', 300, 0, 1, 1500, 1400, 0);
+        """)
+        old.commit()
+        old.close()
+        store = Store(path)
+        self.assertNotIn("elo", {r["name"] for r in store.db.execute("PRAGMA table_info(bots)")})
+        self.assertIsNone(store.db.execute(
+            "SELECT name FROM sqlite_master WHERE name='rating_history'").fetchone())
+        self.assertEqual([(r["bot"], r["chips"]) for r in store.leaderboard()], [("b", 300), ("a", -300)])
+        store.register_bot("c", "{}", "")
 
 
 class Matchmaking(unittest.TestCase):
     def test_everyone_plays_and_tables_are_full(self):
         specs = builtin_specs()  # 9 bots
-        tables = make_tables(specs, {}, 6, "random", random.Random(1))
+        tables = make_tables(specs, 6, random.Random(1))
         self.assertEqual(len(tables), 2)
         self.assertTrue(all(len(t) == 6 and len({s.name for s in t}) == 6 for t in tables))
         self.assertEqual({s.name for t in tables for s in t}, {s.name for s in specs})

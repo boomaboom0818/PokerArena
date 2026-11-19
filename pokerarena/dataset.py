@@ -26,18 +26,18 @@ def _open(db) -> Store:
     return db if isinstance(db, Store) else Store(db)
 
 
-def _bot_filter(store: Store, bots, top, min_elo, min_bb100=None) -> Optional[list[str]]:
-    if bots is None and top is None and min_elo is None and min_bb100 is None:
+def _bot_filter(store: Store, bots, top, min_chips, min_bb100=None) -> Optional[list[str]]:
+    if bots is None and top is None and min_chips is None and min_bb100 is None:
         return None
     rows = store.leaderboard()
     if bots:
         rows = [r for r in rows if r["bot"] in set(bots)]
-    if min_elo is not None:
-        rows = [r for r in rows if r["elo"] >= min_elo]
+    if min_chips is not None:
+        rows = [r for r in rows if r["chips"] >= min_chips]
     if min_bb100 is not None:
         rows = [r for r in rows if r["bb100"] >= min_bb100]
     if top is not None:
-        rows = sorted(rows, key=lambda r: -r["elo"])[:top]
+        rows = sorted(rows, key=lambda r: -r["chips"])[:top]
     return [r["bot"] for r in rows]
 
 
@@ -46,12 +46,12 @@ def _fmt_bb(chips: int, bb: int) -> str:
     return str(int(v)) if v == int(v) else f"{v:.1f}"
 
 
-def iter_decisions(db, *, bots=None, top=None, min_elo=None, min_bb100=None, run_id=None,
+def iter_decisions(db, *, bots=None, top=None, min_chips=None, min_bb100=None, run_id=None,
                    winners_only=False, history=True, limit=None) -> Iterator[dict]:
     """Yield one dict per decision (fold/check/call/bet/raise) from the ``decisions`` view,
     plus derived columns: pot_bb, to_call_bb, stack_bb, raise_to_bb, raise_pot_frac, history."""
     store = _open(db)
-    selected = _bot_filter(store, bots, top, min_elo, min_bb100)
+    selected = _bot_filter(store, bots, top, min_chips, min_bb100)
     where, params = [], []
     if selected is not None:
         if not selected:
@@ -92,10 +92,10 @@ def iter_decisions(db, *, bots=None, top=None, min_elo=None, min_bb100=None, run
         yield row
 
 
-def iter_hands(db, *, bots=None, top=None, min_elo=None, run_id=None) -> Iterator[dict]:
+def iter_hands(db, *, bots=None, top=None, min_chips=None, run_id=None) -> Iterator[dict]:
     """Yield complete hand histories (all hole cards, board, every action) as dicts."""
     store = _open(db)
-    selected = _bot_filter(store, bots, top, min_elo)
+    selected = _bot_filter(store, bots, top, min_chips)
     where, params = [], []
     if selected is not None:
         if not selected:

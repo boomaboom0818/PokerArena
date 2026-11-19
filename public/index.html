@@ -26,7 +26,7 @@
         <p class="kicker">The bot competition</p>
         <h1 class="brand landing-title" aria-label="Poker Arena">Poker<span>Arena</span></h1>
         <p class="landing-tagline">Write the bot.<br>Let it play.</p>
-        <p class="landing-description">Poker Arena is a place for bots to compete in Hold’em and Figgie. Watch the tables, follow the Elo rankings, or run a bot on your own machine and send its decisions to the arena over WebSocket.</p>
+        <p class="landing-description">Poker Arena is a place for bots to compete in Hold’em and Figgie. Watch the tables, follow the chip leaderboards, or run a bot on your own machine and send its decisions to the arena over WebSocket.</p>
         <div class="hero-actions landing-actions">
           <a class="button" href="#connect">Connect your bot</a>
           <a class="button quiet" href="#games">Explore the games <span aria-hidden="true">↓</span></a>
@@ -126,7 +126,7 @@
             <tr>
               <th data-sort="rank">#</th>
               <th data-sort="bot">Bot</th>
-              <th data-sort="elo">Elo</th>
+              <th data-sort="chips" title="Total chips won across all matches">Chips</th>
               <th data-sort="matches">Matches</th>
               <th data-sort="hands">Hands</th>
               <th data-sort="bb100">bb/100</th>
@@ -142,7 +142,7 @@
       </div>
       <aside class="panel" id="bot-card">
         <h2>Pick a bot</h2>
-        <p class="muted">Click a row to see its rating history and recent matches.</p>
+        <p class="muted">Click a row to see its chip history and recent matches.</p>
       </aside>
     </div>
     <div id="hands">
@@ -197,7 +197,7 @@
       <div class="table-wrap">
         <table class="board" id="hu-lb">
           <thead>
-            <tr><th>#</th><th>Bot</th><th>Elo</th><th>Matches</th><th>Hands</th><th>bb/100</th></tr>
+            <tr><th>#</th><th>Bot</th><th title="Total chips won across all matches">Chips</th><th>Matches</th><th>Hands</th><th>bb/100</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -264,7 +264,7 @@
       <div class="hero"><div><h2>Leaderboard</h2></div></div>
       <div class="toolbar">
         <input id="fg-filter" type="search" placeholder="Filter bots" aria-label="Filter Figgie bots">
-        <span class="muted small">Elo moves on who made more money at the table. Edge scores each trade at the truth.</span>
+        <span class="muted small">Ranked by total P&amp;L across every round. Edge scores each trade at the truth.</span>
       </div>
       <div class="table-wrap">
         <table class="board" id="fg-lb">
@@ -272,7 +272,7 @@
             <tr>
               <th data-sort="rank">#</th>
               <th data-sort="bot">Bot</th>
-              <th data-sort="elo">Elo</th>
+              <th data-sort="pnl" title="Total profit across every round">Total</th>
               <th data-sort="rounds">Rounds</th>
               <th data-sort="pnl_rd" title="Average profit per round">P&amp;L/rd</th>
               <th data-sort="ci95" title="95% error bar on P&amp;L per round">±95%</th>
@@ -280,7 +280,6 @@
               <th data-sort="goal_rd" title="Goal-suit cards held at the bell">Goal/rd</th>
               <th data-sort="trades_rd">Trades/rd</th>
               <th data-sort="edge_tr" title="Average profit per trade when a goal card is worth $10 and any other card $0">Edge/trade</th>
-              <th data-sort="pnl">Total</th>
               <th data-sort="status">Now</th>
             </tr>
           </thead>
@@ -320,7 +319,7 @@
           <li>Each bot starts with $350 and antes an equal share of the $200 pot. Four-seat tables ante $50 and deal 10 cards each; five-seat tables ante $40 and deal eight.</li>
           <li>For 60 seconds anyone can bid, offer, buy or sell one card at a time. Every trade clears all quotes.</li>
           <li>At the bell each goal-suit card pays $10 from the pot. The rest ($100 or $120) goes to whoever holds the most goal cards, split on a tie.</li>
-          <li>P&amp;L = cash + payout − $350. Elo compares every pair of bots at the table by P&amp;L.</li>
+          <li>P&amp;L = cash + payout − $350. The leaderboard ranks bots by total P&amp;L.</li>
         </ul>
       </details>
     </div>
@@ -418,7 +417,7 @@ ws.onmessage = (e) => {
               <li><code>seat</code> seat_key, table_id, seat, name, kind, cash, cards, buys, sells, actions</li>
               <li><code>quote</code> quote_id, table_id, seat_key, name, suit, side, price, at</li>
               <li><code>trade</code> trade_id, table_id, round_no, suit, price, buyer, seller, at</li>
-              <li><code>player</code> name, owner, kind, elo, rounds, pnl, pnl_sq, bonuses, tops, trades, edge, goal_cards, rejects, online, last_seen, joined_at, table_id</li>
+              <li><code>player</code> name, owner, kind, elo (legacy, unused), rounds, pnl, pnl_sq, bonuses, tops, trades, edge, goal_cards, rejects, online, last_seen, joined_at, table_id</li>
               <li><code>round_result</code> result_id, table_id, round_no, started_at, ended_at, goal, twelve, counts, players, tape, trades, volume</li>
             </ul>
             <p class="muted">Times are Unix milliseconds. <code>goal</code>, <code>twelve</code> and <code>counts</code> stay empty until the bell. A refused order comes back as a <code>TransactionUpdate</code> with <code>status.Failed</code> and the reason. HTTP works too: <code>POST /v1/database/figgie-arena/call/bid</code> with body <code>["hearts", 7]</code> and your token; call <code>ready</code> every few seconds to stay seated.</p>
@@ -433,6 +432,6 @@ ws.onmessage = (e) => {
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=35"></script>
+<script type="module" src="/app.js?v=36"></script>
 </body>
 </html>

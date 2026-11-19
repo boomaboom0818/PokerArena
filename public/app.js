@@ -1,5 +1,5 @@
-import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=5";
-import { startFiggie, stopFiggie } from "./figgie.js?v=7";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=6";
+import { startFiggie, stopFiggie } from "./figgie.js?v=8";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -14,7 +14,7 @@ const SEAT_POS = {
 };
 
 let leaderboard = [];
-let sortKey = "elo";
+let sortKey = "chips";
 let sortDir = -1;
 let selectedBot = null;
 let live = { table: 0, cursor: -1, timer: null };
@@ -165,7 +165,7 @@ function renderLeaderboard() {
     <tr data-bot="${esc(r.bot)}" class="${r.bot === selectedBot ? "selected" : ""}">
       <td>${r.rank}</td>
       <td class="bot-name">${esc(r.bot)}</td>
-      <td>${Math.round(r.elo)}</td>
+      <td class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</td>
       <td>${r.matches}</td>
       <td>${r.hands.toLocaleString()}</td>
       <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
@@ -195,13 +195,12 @@ async function selectBot(name) {
     const hist = d.history || [];
     card.innerHTML = `
       <h2>${esc(d.bot)}</h2>
-      <p><b>${Math.round(d.elo)}</b> Elo · ${Number(d.matches)} matches · ${Number(d.hands).toLocaleString()} hands</p>
-      ${sparkline(hist.map((h) => h.elo_after))}
+      <p><b class="${d.chips >= 0 ? "up" : "down"}">${money(d.chips)}</b> chips · ${Number(d.matches)} matches · ${Number(d.hands).toLocaleString()} hands</p>
+      ${sparkline(hist.map((h) => h.chips_after))}
       <h2>Recent matches</h2>
       ${(d.recent_matches || []).slice(0, 8).map((m) => `
         <div class="script-line">${esc(m.played_at)} · rank ${Number(m.rank)} ·
           <span class="${m.net_chips >= 0 ? "up" : "down"}">${money(m.net_chips)}</span>
-          · Elo ${Math.round(m.elo_before)} → ${Math.round(m.elo_after)}
         </div>`).join("") || "<p class='muted'>No matches yet.</p>"}
       <p><a href="#hands" id="see-hands">See this bot's hands</a></p>`;
     card.dataset.ready = name;
@@ -268,7 +267,7 @@ async function loadHeadsUpBoard() {
     const rows = data.bots || [];
     $("#hu-lb tbody").innerHTML = rows.map((r) => `
       <tr>
-        <td>${r.rank}</td><td class="bot-name">${esc(r.bot)}</td><td>${Math.round(r.elo)}</td>
+        <td>${r.rank}</td><td class="bot-name">${esc(r.bot)}</td><td class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</td>
         <td>${r.matches}</td><td>${r.hands.toLocaleString()}</td>
         <td class="${r.bb100 >= 0 ? "up" : "down"}">${r.bb100.toFixed(1)}</td>
       </tr>`).join("") || `<tr><td colspan="6">No heads-up matches yet.</td></tr>`;

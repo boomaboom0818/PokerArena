@@ -13,7 +13,6 @@ import threading
 import time
 
 from .bots import BUILTIN, BotSpec, builtin_specs
-from .elo import EloConfig, table_deltas
 from .engine import Table
 from .http_api import _stream_hand, playable_bot_names, seat_tables
 from .models import MatchInfo
@@ -171,22 +170,8 @@ class LiveRunner:
             errors=list(row["table"].errors),
             duration_s=time.time() - row["started"],
         )
-        ratings = self.store.ratings()
-        counts = self.store.match_counts()
-        for name in row["names"]:
-            ratings.setdefault(name, 1500.0)
-            counts.setdefault(name, 0)
-        bb = row["table"].bb
-        n_hands = max(len(hands), 1)
-        profit = {n: result.net_by_seat[i] / bb / n_hands * 100 for i, n in enumerate(row["names"])}
-        deltas = table_deltas(
-            {n: ratings[n] for n in row["names"]}, profit,
-            {n: counts[n] for n in row["names"]}, EloConfig(),
-        )
-        before = {n: ratings[n] for n in row["names"]}
-        after = {n: ratings[n] + deltas[n] for n in row["names"]}
         self._round += 1
-        self.store.save_match(self._run_id, self._round, 0, result, before, after)
+        self.store.save_match(self._run_id, self._round, 0, result)
         row["saved"] += len(hands)
         row["pending"] = []
         row["table"].errors.clear()

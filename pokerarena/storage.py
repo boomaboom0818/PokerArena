@@ -2,8 +2,7 @@
 
 Tables (see ``SCHEMA`` below)::
 
-    bots          current Elo + totals per bot
-    rating_history  one row per (bot, match): Elo before/after
+    bots          totals per bot (the leaderboard ranks by total chips won in match_players)
     runs          one row per ``arena run`` invocation (config as JSON)
     matches       one table session (N bots x many hands)
     match_players final result per bot in a match
@@ -29,7 +28,6 @@ CREATE TABLE IF NOT EXISTS bots (
     bot_id TEXT PRIMARY KEY,
     spec_json TEXT,
     description TEXT,
-    elo REAL NOT NULL,
     matches INTEGER NOT NULL DEFAULT 0,
     hands INTEGER NOT NULL DEFAULT 0,
     first_seen TEXT,
@@ -61,17 +59,8 @@ CREATE TABLE IF NOT EXISTS match_players (
     net_chips INTEGER,
     bb_per_100 REAL,
     rank INTEGER,            -- 1 = most chips won
-    elo_before REAL,
-    elo_after REAL,
     errors INTEGER,          -- crashes / invalid actions in this match
     PRIMARY KEY (match_id, seat)
-);
-CREATE TABLE IF NOT EXISTS rating_history (
-    bot_id TEXT REFERENCES bots(bot_id),
-    match_id INTEGER REFERENCES matches(match_id),
-    elo_before REAL,
-    elo_after REAL,
-    PRIMARY KEY (bot_id, match_id)
 );
 CREATE TABLE IF NOT EXISTS hands (
     hand_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,25 +162,30 @@ class Store:
         self.db.execute("PRAGMA temp_store=MEMORY")
         self.db.execute("PRAGMA cache_size=-65536")
         self.db.executescript(SCHEMA)
+        self._drop_elo()
         self.db.commit()
+
+    def _drop_elo(self):
+        """Remove the Elo columns from databases created before ranking switched to chips."""
+        with self.db:
+            for table, cols in (("bots", ("elo",)), ("match_players", ("elo_before", "elo_after"))):
+                have = {r["name"] for r in self.db.execute(f"PRAGMA table_info({table})")}
+                for col in cols:
+                    if col in have:
+                        self.db.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+            self.db.execute("DROP TABLE IF EXISTS rating_history")
 
     def close(self):
         self.db.close()
 
     # ------------------------------------------------------------------- bots/runs
-    def register_bot(self, bot_id: str, spec_json: str, description: str, initial_elo: float):
+    def register_bot(self, bot_id: str, spec_json: str, description: str):
         self.db.execute(
-            "INSERT OR IGNORE INTO bots(bot_id, spec_json, description, elo, first_seen) VALUES (?,?,?,?,?)",
-            (bot_id, spec_json, description, initial_elo, _now()))
+            "INSERT OR IGNORE INTO bots(bot_id, spec_json, description, first_seen) VALUES (?,?,?,?)",
+            (bot_id, spec_json, description, _now()))
         self.db.execute("UPDATE bots SET spec_json=?, description=? WHERE bot_id=?",
                         (spec_json, description, bot_id))
         self.db.commit()
-
-    def ratings(self) -> dict:
-        return {r["bot_id"]: r["elo"] for r in self.db.execute("SELECT bot_id, elo FROM bots")}
-
-    def match_counts(self) -> dict:
-        return {r["bot_id"]: r["matches"] for r in self.db.execute("SELECT bot_id, matches FROM bots")}
 
     def start_run(self, config_json: str) -> int:
         cur = self.db.execute("INSERT INTO runs(started_at, config_json) VALUES (?,?)", (_now(), config_json))
@@ -199,8 +193,7 @@ class Store:
         return cur.lastrowid
 
     # ----------------------------------------------------------------------- writes
-    def save_match(self, run_id, round_no, table_no, result: MatchResult, elo_before: dict,
-                   elo_after: dict) -> int:
+    def save_match(self, run_id, round_no, table_no, result: MatchResult) -> int:
         cfg = result.config
         db = self.db
         n_hands = len(result.hands)
@@ -217,14 +210,13 @@ class Store:
             match_id = cur.lastrowid
             for seat, name in enumerate(result.names):
                 db.execute(
-                    "INSERT INTO match_players VALUES (?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO match_players(match_id, seat, bot_id, net_chips, bb_per_100, rank, errors)"
+                    " VALUES (?,?,?,?,?,?,?)",
                     (match_id, seat, name, nets[seat], nets[seat] / bb / max(n_hands, 1) * 100,
-                     rank_of_seat[seat], elo_before[name], elo_after[name], result.error_counts[seat]))
-                db.execute("INSERT INTO rating_history VALUES (?,?,?,?)",
-                           (name, match_id, elo_before[name], elo_after[name]))
+                     rank_of_seat[seat], result.error_counts[seat]))
                 db.execute(
-                    "UPDATE bots SET elo=?, matches=matches+1, hands=hands+?, last_played=? WHERE bot_id=?",
-                    (elo_after[name], n_hands, _now(), name))
+                    "UPDATE bots SET matches=matches+1, hands=hands+?, last_played=? WHERE bot_id=?",
+                    (n_hands, _now(), name))
             for seat, msg in result.errors:
                 db.execute("INSERT INTO errors VALUES (?,?,?,?)", (match_id, seat, result.names[seat], msg))
 
@@ -271,10 +263,13 @@ class Store:
         wins = {r["bot_id"]: r["w"] for r in self.db.execute(
             "SELECT bot_id, SUM(rank = 1) w FROM match_players GROUP BY bot_id")}
         out = []
-        for b in self.db.execute("SELECT * FROM bots ORDER BY elo DESC"):
+        for b in self.db.execute(
+            """SELECT b.*, COALESCE(SUM(mp.net_chips), 0) chips FROM bots b
+               LEFT JOIN match_players mp USING(bot_id)
+               GROUP BY b.bot_id ORDER BY chips DESC, b.bot_id"""):
             if b["hands"] < min_hands:
                 continue
-            row = dict(bot=b["bot_id"], elo=b["elo"], matches=b["matches"], hands=b["hands"],
+            row = dict(bot=b["bot_id"], chips=b["chips"], matches=b["matches"], hands=b["hands"],
                        match_wins=wins.get(b["bot_id"], 0) or 0)
             row.update(stats.get(b["bot_id"], dict(bb100=0.0, stderr=0.0, vpip=0.0, pfr=0.0,
                                                    saw_flop=0.0, showdown=0.0)))

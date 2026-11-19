@@ -69,16 +69,16 @@ def dispatch(method: str, path: str, qs: dict, body: dict):
     if path == "/api/bots":
         rows = []
         for r in db.db.execute(
-            "SELECT bot_id, description, elo, matches, hands FROM bots ORDER BY elo DESC"):
+            "SELECT bot_id, description, matches, hands FROM bots ORDER BY bot_id"):
             rows.append({
-                "bot": r["bot_id"], "description": r["description"], "elo": r["elo"],
+                "bot": r["bot_id"], "description": r["description"],
                 "matches": r["matches"], "hands": r["hands"],
             })
         known = {r["bot"] for r in rows}
         for name, cls in BUILTIN.items():
             if name not in known:
                 rows.append({
-                    "bot": name, "description": cls.description, "elo": None,
+                    "bot": name, "description": cls.description,
                     "matches": 0, "hands": 0, "builtin": True,
                 })
         return 200, {"bots": rows, "builtins": sorted(BUILTIN)}

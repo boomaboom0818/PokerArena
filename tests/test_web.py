@@ -105,7 +105,6 @@ class ApiPayloadTests(unittest.TestCase):
             "gone_bot",
             '{"kind":"file","target":"/tmp/does-not-exist-pokerarena.py","class_name":"Gone"}',
             "",
-            1500,
         )
         names = playable_bot_names(self.store)
         self.assertNotIn("gone_bot", names)

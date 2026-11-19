@@ -68,7 +68,7 @@ export async function leaderboard(db = DB) {
   const result = await sql("SELECT * FROM standings", db);
   const bots = rows(result).map((b) => ({
     bot: b.name,
-    elo: Math.round(b.elo * 10) / 10,
+    chips: Number(b.chips),
     matches: b.matches,
     hands: b.hands,
     bb100: b.hands ? Math.round(Number(b.chips) / b.hands * 1000) / 10 : 0,
@@ -79,7 +79,7 @@ export async function leaderboard(db = DB) {
     af: 0,
     match_wins: 0,
     rank: 0,
-  })).sort((a, b) => b.elo - a.elo);
+  })).sort((a, b) => b.chips - a.chips || a.bot.localeCompare(b.bot));
   bots.forEach((b, i) => { b.rank = i + 1; });
   return { bots };
 }

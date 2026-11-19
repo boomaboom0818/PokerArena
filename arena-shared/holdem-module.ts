@@ -6,7 +6,8 @@ import { deal, act, observation, publicFrame, MATCH_HANDS, type Hand } from './h
 
 export function pokerArena(size: 2 | 6) {
   const houses = HOUSE.slice(0, size);
-  // Keep the old row shape for a non-destructive upgrade. Legacy source is private and never read.
+  // Keep the old row shape for a non-destructive upgrade. Legacy `elo` and `source` are frozen and never read;
+  // standings rank by total chips won.
   const bot = table({ name: 'bot' }, { name: t.string().primaryKey(), elo: t.f64(), matches: t.u32(), hands: t.u32(), chips: t.i64(), source: t.string() });
   const botOwner = table({ name: 'bot_owner' }, { name: t.string().primaryKey(), owner: t.identity().unique() });
   const online = table({ name: 'online' }, { name: t.string().primaryKey(), connection: t.string().unique() });
@@ -24,10 +25,10 @@ export function pokerArena(size: 2 | 6) {
   const now = (ctx: Ctx) => Number(ctx.timestamp.microsSinceUnixEpoch / 1000n);
   const paused = (ctx: Ctx) => ctx.db.control.id.find(0)?.paused !== false;
   const admin = (ctx: Ctx) => ctx.sender.toHexString() === ctx.env.ARENA_ADMIN_ID;
-  const stats = (name: string) => ({ name, elo: 1500, matches: 0, hands: 0, chips: 0n, source: '' });
+  const stats = (name: string) => ({ name, elo: 0, matches: 0, hands: 0, chips: 0n, source: '' });
   const standings = db.anonymousView({ public: true }, t.array(t.row('Standing', {
-    name: t.string().primaryKey(), elo: t.f64(), matches: t.u32(), hands: t.u32(), chips: t.i64(),
-  })), ctx => [...ctx.db.bot.iter()].map(({ name, elo, matches, hands, chips }) => ({ name, elo, matches, hands, chips })));
+    name: t.string().primaryKey(), matches: t.u32(), hands: t.u32(), chips: t.i64(),
+  })), ctx => [...ctx.db.bot.iter()].map(({ name, matches, hands, chips }) => ({ name, matches, hands, chips })));
   const myTurn = db.view({ name: 'my_turn', public: true }, t.array(turn.rowType), ctx => ctx.from.turn.where(r => r.owner.eq(ctx.sender)).build());
 
   function newHand(ctx: Ctx, tableId: number, names: string[], no: number) {
@@ -35,13 +36,10 @@ export function pokerArena(size: 2 | 6) {
     return deal(names, no, random.shuffle(Array.from({length:52}, (_,i) => i)));
   }
 
-  function rate(ctx: Ctx, m: Match) {
-    const rows = m.hand.seats.map(s => ctx.db.bot.name.find(s.name)!);
-    rows.forEach((row,i) => {
-      let delta = 0;
-      rows.forEach((other,j) => { if (i !== j) delta += (1+Math.sign(m.nets[i]-m.nets[j]))/2 - 1/(1+10**((other.elo-row.elo)/400)); });
-      ctx.db.bot.name.update({ ...row, elo: row.elo + (row.matches < 30 ? 32 : 16)*delta/(size-1),
-        matches: row.matches+1, hands: row.hands+MATCH_HANDS, chips: row.chips+BigInt(m.nets[i]) });
+  function record(ctx: Ctx, m: Match) {
+    m.hand.seats.forEach((s,i) => {
+      const row = ctx.db.bot.name.find(s.name)!;
+      ctx.db.bot.name.update({ ...row, matches: row.matches+1, hands: row.hands+MATCH_HANDS, chips: row.chips+BigInt(m.nets[i]) });
     });
   }
 
@@ -59,7 +57,7 @@ export function pokerArena(size: 2 | 6) {
     }
     if (h.done) {
       h.seats.forEach((s,i) => { m.nets[i] += s.stack-STACK; });
-      if (h.no === MATCH_HANDS) rate(ctx,m);
+      if (h.no === MATCH_HANDS) record(ctx,m);
     }
     const old = ctx.db.tableState.tableId.find(tableId);
     const frame = { tableId, names: h.seats.map(s => s.name).join(','), ...publicFrame(h), handsSaved: (old?.handsSaved ?? 0)+Number(h.done) };

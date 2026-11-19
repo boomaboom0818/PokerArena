@@ -3,7 +3,7 @@
 PokerArena is a live competition for self-hosted bots in **6-max no-limit Hold’em**,
 **heads-up no-limit Hold’em**, and **Figgie**, Jane Street’s trading card game.
 Run your strategy on your own machine and connect over WebSocket. The arena deals cards,
-validates actions, and tracks Elo. **You send actions, not source code.**
+validates actions, and ranks bots by chips won. **You send actions, not source code.**
 
 [Watch the arena](https://pokerarena-psi.vercel.app/) · [Connect a bot](https://pokerarena-psi.vercel.app/#connect)
 
@@ -58,9 +58,9 @@ five play and the remaining bots get priority at the next deal.
 * 60 seconds of open trading: bid, offer, buy or sell one card at a time. **Any trade clears
   every quote at the table.**
 * At the bell each goal card pays $10; the rest of the pot ($100 or $120) goes to whoever
-  holds the most goal cards. P&L = cash + payout − $350. Elo is pairwise on P&L.
+  holds the most goal cards. P&L = cash + payout − $350. The leaderboard ranks bots by total P&L.
 * Hands are private until the bell; recent rounds are kept in `round_result` (dealt and final hands, the
-  full tape, payouts, trade edge, Elo change) for replays and analysis.
+  full tape, payouts, trade edge) for replays and analysis.
 
 Example Figgie strategy:
 
@@ -122,7 +122,7 @@ for each poker database, like `FIGGIE_DEAL_KEY`). Later publishes preserve store
 Run `npm ci` in each module before building to refresh the local `@pokerarena/shared` package.
 Figgie retains the admin recorded at initialization. Use `--delete-data=never`;
 the poker visibility change intentionally breaks direct `bot` subscriptions, which must switch to
-`standings`. Existing poker rows keep their ratings and names but have no provable owner and are
+`standings`. Existing poker rows keep their chip totals and names but have no provable owner and are
 not seated; register a new name, or ask the admin to remove the old row before re-registration.
 Previously public bot source cannot be made retroactively private. Rotate any secret it contained.
 Check the public standings and owner controls before the admin resumes games with `set_paused`.
@@ -130,7 +130,7 @@ Check the public standings and owner controls before the admin resumes games wit
 ## Local Hold’em tournaments
 
 Run offline practice or generate hand histories and training data in SQLite. These commands do not
-submit a bot to the live arena or change its public rating.
+submit a bot to the live arena or change its public chip total.
 
 ```sh
 python -m pokerarena join my_bot.py
@@ -147,17 +147,12 @@ python -m pokerarena export decisions train.jsonl --top 3
   bot gets the same number of turns on the button). The button rotates every hand.
 * **Stacks reset to 100 BB before every hand.** Blinds are 50/100 chips.
 * Matches are **deterministic** given `--seed` (deck + each bot's `self.rng`).
-* `--matchmaking elo` seats bots with similar ratings together; `random` (default) is best for unbiased
-  ratings.
 
-### Elo ([elo.py](pokerarena/elo.py))
+### Ranking
 
-Each table of N bots is treated as N·(N−1)/2 pairwise games decided by **who won more chips in the
-match**. A bot's change is `K/(N−1) · Σ(S − E)`, so a table moves ratings by at most K and (with equal K)
-is zero-sum. K = 32 for a bot's first 30 matches, then 16. Tables of one round are rated from the same
-pre-round snapshot, so the result doesn't depend on which finished first. Start rating 1500.
-The leaderboard also shows **bb/100 with a 95 % error bar** — poker is noisy, so read Elo together with
-the confidence interval; run more rounds to tighten it.
+Every leaderboard (live 6-max, heads-up, and local tournaments) ranks bots by **total chips won** across
+all their matches; Figgie ranks by total P&L in dollars. Totals reward volume as well as skill, so the
+leaderboard also shows **bb/100 with a 95 % error bar** — poker is noisy; run more rounds to tighten it.
 
 ## Write a Hold’em bot
 
@@ -192,7 +187,7 @@ Bot name = identity on the leaderboard; give each new version a new name.
 
 ```
 runs ─┐
-      └< matches >─< match_players >── bots ──< rating_history
+      └< matches >─< match_players >── bots
               │
               └< hands >─< hand_players   (hole cards of ALL players, net result, VPIP/PFR flags)
                     │
@@ -203,8 +198,7 @@ VIEW decisions = actions ⨝ hand_players ⨝ hands ⨝ matches  → ready-made 
 
 | table | grain | notable columns |
 |---|---|---|
-| `bots` | bot | `elo`, `matches`, `hands` |
-| `rating_history` | bot × match | `elo_before`, `elo_after` → plot rating curves |
+| `bots` | bot | `matches`, `hands` (total chips = `SUM(match_players.net_chips)`) |
 | `matches` | table session | `seed`, blinds, stack, `run_id`, `round_no` |
 | `match_players` | bot × match | `net_chips`, `bb_per_100`, `rank`, `errors` |
 | `hands` | hand | `board`, `button`, `pot_total`, `showdown` |
@@ -231,7 +225,7 @@ for row in iter_decisions("arena.db", top=3):           # behaviour-clone the be
     x, y = encode_decision(row), action_class(row)      # 124 floats, 5 action classes
 ```
 
-Filters: `bots=[...]`, `top=N`, `min_elo`, `min_bb100`, `run_id`, `winners_only`. CLI equivalents:
+Filters: `bots=[...]`, `top=N` (most chips), `min_chips`, `min_bb100`, `run_id`, `winners_only`. CLI equivalents:
 
 ```
 python -m pokerarena export decisions data.csv --top 3 --winners-only
@@ -259,8 +253,8 @@ Maincloud. Deploy the static site and archive API via [Vercel](vercel.json); pro
 
 ```
 pokerarena/engine.py     betting rules, side pots, showdown     evaluator.py  7-card evaluator
-pokerarena/arena.py      matchmaking + parallel rounds          elo.py        multiplayer Elo
-pokerarena/storage.py    schema, writer, leaderboard            dataset.py    exports / iterators
+pokerarena/arena.py      matchmaking + parallel rounds          dataset.py    exports / iterators
+pokerarena/storage.py    schema, writer, chip leaderboard
 pokerarena/bots/         Bot base class, loader, built-ins      features.py   optional encoders
 public/                  Spectator site and connection guides
 arena-shared/            Shared live Hold’em engine and SpacetimeDB module code
@@ -270,8 +264,7 @@ spacetimedb*/            Deployable modules for 6-max, heads-up, and Figgie
 ## Notes / possible extensions
 
 * No-limit only; chips are integers; stacks reset per hand (cash-game style with fixed depth).
-* Elo ratings are relative to the pool; seed it with a few anchor bots (the built-ins) to keep scales comparable.
 * Bots run in-process in the worker, with no time limit or sandbox — only run code you trust.
 * Ideas: duplicate-deal (replay the same cards with rotated seats) for lower variance, per-action time limits,
-  Parquet export, TrueSkill/Weng-Lin instead of pairwise Elo.
+  Parquet export, a skill rating (TrueSkill/Weng-Lin) alongside chip totals.
 * Connect to a public arena with `connect` (poker) or `figgie`; `--bot-dir` runs an independent local tournament.

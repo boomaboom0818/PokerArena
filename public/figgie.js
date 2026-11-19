@@ -2,7 +2,7 @@
 // WebSocket protocol a bot uses, so what you see is exactly what the bots see
 // (plus the hands, which are published at the bell).
 
-import { HOST as HTTP_HOST } from "./stdb.js?v=5";
+import { HOST as HTTP_HOST } from "./stdb.js?v=6";
 const WS_HOST = HTTP_HOST.replace(/^https:/, "wss:");
 const DB = "figgie-arena";
 const PROTOCOL = "v1.json.spacetimedb";
@@ -45,7 +45,7 @@ const fg = {
   results: [],
   resultsAt: 0,
   lastPhase: "",
-  sortKey: "elo",
+  sortKey: "pnl",
   sortDir: -1,
   selected: null,
   replay: { result: null, frames: [], index: 0, timer: null },
@@ -163,7 +163,7 @@ async function loadResults(extra = 40) {
   // Replays contain historical JSON strings rather than typed database columns.
   // Validate before interpolating counts into HTML or expanding the trade tape.
   const counts = h => Array.isArray(h) && h.length === 4 && h.every(n => Number.isInteger(n) && n >= 0 && n <= 12);
-  const numeric = ['cash', 'goalCards', 'bonus', 'payout', 'pnl', 'edge', 'buys', 'sells', 'eloBefore', 'eloAfter'];
+  const numeric = ['cash', 'goalCards', 'bonus', 'payout', 'pnl', 'edge', 'buys', 'sells'];
   return rows.filter(r => {
     try {
       r.playersParsed = JSON.parse(r.players);
@@ -429,10 +429,9 @@ function resultTable(r) {
       <td>$${p.payout}${p.bonus ? ` <span class="fg-bonus">+bonus</span>` : ""}</td>
       <td class="${p.edge >= 0 ? "up" : "down"}">${money(p.edge)}</td>
       <td class="${p.pnl >= 0 ? "up" : "down"}"><b>${money(p.pnl)}</b></td>
-      <td>${Math.round(p.eloAfter)} <small class="${p.eloAfter >= p.eloBefore ? "up" : "down"}">${p.eloAfter >= p.eloBefore ? "+" : "−"}${Math.abs(p.eloAfter - p.eloBefore).toFixed(1)}</small></td>
     </tr>`).join("");
   return `${head}<div class="table-wrap"><table class="board fg-results"><thead><tr>
-    <th>Bot</th><th>Dealt</th><th>Final</th><th>Goal</th><th>B/S</th><th>Cash</th><th>Payout</th><th title="Trades valued at the truth: a goal card is worth $10, the rest $0">Edge</th><th>P&amp;L</th><th>Elo</th>
+    <th>Bot</th><th>Dealt</th><th>Final</th><th>Goal</th><th>B/S</th><th>Cash</th><th>Payout</th><th title="Trades valued at the truth: a goal card is worth $10, the rest $0">Edge</th><th>P&amp;L</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -560,7 +559,6 @@ function boardRows() {
     return {
       bot: p.name,
       kind: p.kind,
-      elo: p.elo,
       rounds: n,
       pnl_rd: mean,
       ci95: n > 1 ? 1.96 * Math.sqrt(variance / n) : 0,
@@ -576,7 +574,7 @@ function boardRows() {
 
 function renderBoard() {
   const q = ($("#fg-filter").value || "").trim().toLowerCase();
-  const rows = boardRows().sort((a, b) => b.elo - a.elo);
+  const rows = boardRows().sort((a, b) => b.pnl - a.pnl || a.bot.localeCompare(b.bot));
   rows.forEach((r, i) => { r.rank = i + 1; });
   const shown = rows.filter((r) => !q || r.bot.includes(q)).sort((a, b) => {
     const av = a[fg.sortKey], bv = b[fg.sortKey];
@@ -586,7 +584,7 @@ function renderBoard() {
     <tr data-bot="${esc(r.bot)}" class="${r.bot === fg.selected ? "selected" : ""}">
       <td>${r.rank}</td>
       <td class="bot-name">${esc(r.bot)} <span class="kind kind-${esc(r.kind)}">${r.kind === "remote" ? "live" : esc(r.kind)}</span></td>
-      <td>${Math.round(r.elo)}</td>
+      <td class="${r.pnl >= 0 ? "up" : "down"}">${money(r.pnl)}</td>
       <td>${r.rounds}</td>
       <td class="${r.pnl_rd >= 0 ? "up" : "down"}">${money(r.pnl_rd)}</td>
       <td>${r.ci95 ? "±" + r.ci95.toFixed(0) : "—"}</td>
@@ -594,9 +592,8 @@ function renderBoard() {
       <td>${r.goal_rd.toFixed(1)}</td>
       <td>${r.trades_rd.toFixed(1)}</td>
       <td class="${r.edge_tr >= 0 ? "up" : "down"}">${r.edge_tr >= 0 ? "+" : "−"}$${Math.abs(r.edge_tr).toFixed(2)}</td>
-      <td class="${r.pnl >= 0 ? "up" : "down"}">${money(r.pnl)}</td>
       <td class="muted">${r.status}</td>
-    </tr>`).join("") || `<tr><td colspan="12">No bots yet.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="11">No bots yet.</td></tr>`;
   const body = $("#fg-lb tbody");
   if (body.dataset.html !== html) {
     body.innerHTML = html;
@@ -633,7 +630,7 @@ async function selectBot(name) {
   const pct = (a, b) => (b ? Math.round((100 * a) / b) + "%" : "—");
   card.innerHTML = `
     <h2>${esc(name)} <span class="kind kind-${esc(p?.kind)}">${p?.kind === "remote" ? "live" : esc(p?.kind || "")}</span></h2>
-    <p><b>${Math.round(p?.elo || 1500)}</b> Elo · ${p?.rounds || 0} rounds · ${money(p?.pnl_rd || 0)} a round</p>
+    <p><b class="${(p?.pnl || 0) >= 0 ? "up" : "down"}">${money(p?.pnl || 0)}</b> total · ${p?.rounds || 0} rounds · ${money(p?.pnl_rd || 0)} a round</p>
     ${spark(curve)}
     <div class="fg-stats">
       <div class="stat"><b>${pct(bySuit.goalBuys, bySuit.buys)}</b><span>of buys were the goal suit</span></div>

@@ -3,7 +3,7 @@
 A *round* seats every bot at exactly one 6-handed table (bots left over when the pool size
 is not a multiple of the table size are re-used to fill the last table). All tables of a
 round run at the same time in separate processes; afterwards results are written to the
-database and Elo is updated from a snapshot of the pre-round ratings.
+database. The leaderboard ranks bots by total chips won.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from dataclasses import asdict, dataclass
 from typing import Callable, Optional
 
 from .bots import BotSpec
-from .elo import EloConfig, table_deltas
 from .engine import Table
 from .models import MatchResult
 from .storage import Store
@@ -30,8 +29,6 @@ class ArenaConfig:
     big_blind: int = 100
     starting_stack: int = 10_000  # 100 big blinds, reset before every hand
     workers: int = 0  # 0 = number of CPUs
-    matchmaking: str = "random"  # "random" or "elo" (similar ratings sit together)
-    elo_noise: float = 150.0  # rating jitter used by "elo" matchmaking
     seed: int = 0
 
     def normalized_hands(self) -> int:
@@ -49,15 +46,12 @@ def _play_table(task: dict) -> MatchResult:
     return table.run(task["n_hands"])
 
 
-def make_tables(pool: list, ratings: dict, size: int, mode: str, rng: random.Random,
-                noise: float = 150.0) -> list[list]:
+def make_tables(pool: list, size: int, rng: random.Random) -> list[list]:
     """Partition ``pool`` (list of BotSpec) into tables of ``size`` (every bot plays once)."""
     if len(pool) < size:
         raise ValueError(f"need at least {size} bots, got {len(pool)}")
     order = list(pool)
     rng.shuffle(order)
-    if mode == "elo":
-        order.sort(key=lambda s: -(ratings.get(s.name, 1500.0) + rng.gauss(0, noise)))
     tables = [order[i:i + size] for i in range(0, len(order), size)]
     last = tables[-1]
     if len(last) < size:  # top up the last table with bots from elsewhere
@@ -70,20 +64,18 @@ def make_tables(pool: list, ratings: dict, size: int, mode: str, rng: random.Ran
 
 
 class Arena:
-    def __init__(self, store: Store, specs: list[BotSpec], cfg: ArenaConfig, elo: EloConfig = EloConfig()):
+    def __init__(self, store: Store, specs: list[BotSpec], cfg: ArenaConfig):
         names = [s.name for s in specs]
         if len(set(names)) != len(names):
             raise ValueError(f"bot names must be unique: {names}")
         if len(specs) < cfg.table_size:
             raise ValueError(f"need at least {cfg.table_size} bots, got {len(specs)}")
-        self.store, self.specs, self.cfg, self.elo = store, specs, cfg, elo
+        self.store, self.specs, self.cfg = store, specs, cfg
         self.rng = random.Random(cfg.seed)
         for s in specs:
             cls = s._load_class()
-            store.register_bot(s.name, json.dumps(asdict(s), default=str), getattr(cls, "description", ""),
-                               elo.initial)
-        self.run_id = store.start_run(json.dumps(dict(arena=asdict(cfg), elo=asdict(elo),
-                                                      bots=[s.name for s in specs])))
+            store.register_bot(s.name, json.dumps(asdict(s), default=str), getattr(cls, "description", ""))
+        self.run_id = store.start_run(json.dumps(dict(arena=asdict(cfg), bots=[s.name for s in specs])))
         self.round_no = 0
         self._match_counter = 0
 
@@ -103,9 +95,7 @@ class Arena:
 
     def play_round(self, executor) -> None:
         cfg = self.cfg
-        ratings = self.store.ratings()
-        counts = self.store.match_counts()
-        tables = make_tables(self.specs, ratings, cfg.table_size, cfg.matchmaking, self.rng, cfg.elo_noise)
+        tables = make_tables(self.specs, cfg.table_size, self.rng)
         n_hands = cfg.normalized_hands()
         cfg_dict = dict(small_blind=cfg.small_blind, big_blind=cfg.big_blind,
                         starting_stack=cfg.starting_stack)
@@ -117,16 +107,5 @@ class Arena:
         results = list(executor.map(_play_table, tasks))  # ordered -> deterministic DB writes
 
         self.round_no += 1
-        # all tables are rated against the same pre-round snapshot
-        deltas_by_table = []
-        for res in results:
-            nets = res.net_by_seat
-            profit = {n: nets[s] / cfg.big_blind / n_hands * 100 for s, n in enumerate(res.names)}
-            deltas_by_table.append(table_deltas(
-                {n: ratings[n] for n in res.names}, profit, {n: counts[n] for n in res.names}, self.elo))
-        running = dict(ratings)
-        for table_no, (res, deltas) in enumerate(zip(results, deltas_by_table)):
-            before = {n: running[n] for n in res.names}
-            after = {n: running[n] + deltas[n] for n in res.names}
-            self.store.save_match(self.run_id, self.round_no, table_no, res, before, after)
-            running.update(after)
+        for table_no, res in enumerate(results):
+            self.store.save_match(self.run_id, self.round_no, table_no, res)

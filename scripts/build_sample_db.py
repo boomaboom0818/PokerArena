@@ -13,7 +13,7 @@ def main() -> None:
     store = Store("data/sample.db")
     Arena(store, specs, ArenaConfig(hands_per_match=24, workers=1, seed=11)).run(4)
     rows = store.leaderboard()
-    print(f"sample db: {len(rows)} bots, leader {rows[0]['bot']} {rows[0]['elo']:.0f}")
+    print(f"sample db: {len(rows)} bots, leader {rows[0]['bot']} {rows[0]['chips']:+} chips")
     store.close()
 
 

@@ -43,7 +43,6 @@ def leaderboard_payload(store: Store, min_hands: int = 0) -> dict:
     rows = store.leaderboard(min_hands)
     for i, row in enumerate(rows, 1):
         row["rank"] = i
-        row["elo"] = round(row["elo"], 1)
         row["bb100"] = round(row["bb100"], 2)
         row["stderr"] = round(row["stderr"], 2)
         row["vpip"] = round(row["vpip"], 1)
@@ -59,23 +58,21 @@ def bot_detail(store: Store, bot_id: str) -> dict | None:
     b = store.db.execute("SELECT * FROM bots WHERE bot_id=?", (bot_id,)).fetchone()
     if not b:
         return None
-    history = [
-        {"match_id": r["match_id"], "elo_before": r["elo_before"], "elo_after": r["elo_after"]}
-        for r in store.db.execute(
-            "SELECT match_id, elo_before, elo_after FROM rating_history WHERE bot_id=? ORDER BY match_id",
-            (bot_id,))
-    ]
+    history, total = [], 0
+    for r in store.db.execute(
+            "SELECT match_id, net_chips FROM match_players WHERE bot_id=? ORDER BY match_id", (bot_id,)):
+        total += r["net_chips"]
+        history.append({"match_id": r["match_id"], "net_chips": r["net_chips"], "chips_after": total})
     recent = [
         _jsonable(r) for r in store.db.execute(
-            """SELECT mp.match_id, mp.seat, mp.net_chips, mp.bb_per_100, mp.rank, mp.elo_before,
-                      mp.elo_after, mp.errors, m.played_at, m.n_hands, m.round_no
+            """SELECT mp.match_id, mp.seat, mp.net_chips, mp.bb_per_100, mp.rank, mp.errors, m.played_at, m.n_hands, m.round_no
                FROM match_players mp JOIN matches m USING(match_id)
                WHERE mp.bot_id=? ORDER BY mp.match_id DESC LIMIT 20""",
             (bot_id,))
     ]
     return {
         "bot": bot_id,
-        "elo": b["elo"],
+        "chips": total,
         "matches": b["matches"],
         "hands": b["hands"],
         "description": b["description"],
@@ -92,10 +89,9 @@ def list_matches(store: Store, limit: int = 40) -> list[dict]:
     for m in store.db.execute(
         "SELECT * FROM matches ORDER BY match_id DESC LIMIT ?", (limit,)):
         seats = [
-            {"seat": r["seat"], "bot": r["bot_id"], "net": r["net_chips"], "rank": r["rank"],
-             "elo_before": r["elo_before"], "elo_after": r["elo_after"]}
+            {"seat": r["seat"], "bot": r["bot_id"], "net": r["net_chips"], "rank": r["rank"]}
             for r in store.db.execute(
-                "SELECT seat, bot_id, net_chips, rank, elo_before, elo_after "
+                "SELECT seat, bot_id, net_chips, rank "
                 "FROM match_players WHERE match_id=? ORDER BY seat", (m["match_id"],))
         ]
         item = _jsonable(m)
@@ -236,7 +232,7 @@ class MyBot(Bot):
         "self.rng is seeded by the arena. Use it instead of the global random module.",
         "A crash or an illegal action is corrected and counted. It does not kill the match.",
     ],
-    "safety": "Bots run in-process. Only load code you trust. Give each version a new name so Elo stays attached to one strategy.",
+    "safety": "Bots run in-process. Only load code you trust. Give each version a new name so chip totals stay attached to one strategy.",
 }
 
 
@@ -721,13 +717,13 @@ def make_handler(store: Store, runner=None):
                 return
             if method == "GET" and path == "/api/bots":
                 rows = []
-                for r in store.db.execute("SELECT bot_id, description, elo, matches, hands FROM bots ORDER BY elo DESC"):
-                    rows.append({"bot": r["bot_id"], "description": r["description"], "elo": r["elo"],
+                for r in store.db.execute("SELECT bot_id, description, matches, hands FROM bots ORDER BY bot_id"):
+                    rows.append({"bot": r["bot_id"], "description": r["description"],
                                  "matches": r["matches"], "hands": r["hands"]})
                 known = {r["bot"] for r in rows}
                 for name, cls in BUILTIN.items():
                     if name not in known:
-                        rows.append({"bot": name, "description": cls.description, "elo": None,
+                        rows.append({"bot": name, "description": cls.description,
                                      "matches": 0, "hands": 0, "builtin": True})
                 self._send(200, {"bots": rows, "builtins": sorted(BUILTIN)})
                 return

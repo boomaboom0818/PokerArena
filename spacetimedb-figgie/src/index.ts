@@ -37,7 +37,7 @@ const player = table({ name: 'player', public: true }, {
   name: t.string().primaryKey(),
   owner: t.identity().index(),
   kind: t.string(), // house | remote | hosted
-  elo: t.f64(),
+  elo: t.f64(), // legacy, frozen: the leaderboard ranks by total pnl
   rounds: t.u32(),
   pnl: t.f64(),
   pnlSq: t.f64(),
@@ -534,10 +534,6 @@ function bumpRejects(ctx: Ctx, name: string): void {
 
 // ---------- the bell ----------
 
-function expected(a: number, b: number): number {
-  return 1 / (1 + 10 ** ((b - a) / 400));
-}
-
 function settle(ctx: Ctx, tableId: number): void {
   const now = nowMs(ctx);
   const tbl = ctx.db.figgieTable.tableId.find(tableId)!;
@@ -566,16 +562,6 @@ function settle(ctx: Ctx, tableId: number): void {
     return s.cash + payout - START_CASH;
   });
   const rows = seats.map(s => ctx.db.player.name.find(s.name)!);
-  const n = seats.length;
-  const deltas = rows.map((row, i) => {
-    let total = 0;
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue;
-      const sc = pnl[i] === pnl[j] ? 0.5 : pnl[i] > pnl[j] ? 1 : 0;
-      total += sc - expected(row.elo, rows[j].elo);
-    }
-    return (row.rounds < 30 ? 32 : 16) * total / (n - 1);
-  });
   const top = Math.max(...pnl);
   const results = seats.map((s, i) => ({
     name: s.name,
@@ -590,13 +576,10 @@ function settle(ctx: Ctx, tableId: number): void {
     edge: edges[i],
     buys: s.buys,
     sells: s.sells,
-    eloBefore: Math.round(rows[i].elo * 10) / 10,
-    eloAfter: Math.round((rows[i].elo + deltas[i]) * 10) / 10,
   }));
   rows.forEach((row, i) => {
     ctx.db.player.name.update({
       ...row,
-      elo: row.elo + deltas[i],
       rounds: row.rounds + 1,
       pnl: row.pnl + pnl[i],
       pnlSq: row.pnlSq + pnl[i] * pnl[i],
@@ -661,7 +644,7 @@ export const init = spacetimedb.init(ctx => {
   const now = nowMs(ctx);
   for (const name of HOUSE) {
     ctx.db.player.insert({
-      name, owner: Identity.zero(), kind: 'house', elo: 1500, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
+      name, owner: Identity.zero(), kind: 'house', elo: 0, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
       trades: 0, edge: 0, goalCards: 0, rejects: 0, online: true, lastSeen: now, joinedAt: now, tableId: -1,
     });
   }
@@ -710,7 +693,7 @@ export const register = spacetimedb.reducer({ name: t.string() }, (ctx, { name }
   }
   checkRegistration(ctx);
   ctx.db.player.insert({
-    name: safe, owner: ctx.sender, kind: 'remote', elo: 1500, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
+    name: safe, owner: ctx.sender, kind: 'remote', elo: 0, rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
     trades: 0, edge: 0, goalCards: 0, rejects: 0, online: ctx.connectionId !== null, lastSeen: now, joinedAt: now, tableId: -1,
   });
 });

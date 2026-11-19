@@ -1,7 +1,7 @@
 [project]
 name = "pokerarena"
 version = "0.1.0"
-description = "Texas Hold'em bot arena with multiplayer Elo and a SQLite match store"
+description = "Texas Hold'em bot arena ranked by chips won, with a SQLite match store"
 requires-python = ">=3.10"
 dependencies = []
 

@@ -9,19 +9,18 @@ import time
 from .arena import Arena, ArenaConfig
 from .bots import BUILTIN, builtin_specs, spec_from_string, specs_from_dir
 from .dataset import export_csv, export_jsonl, iter_decisions, iter_hands
-from .elo import EloConfig
 from .replay import format_hand
 from .starter import starter_source
 from .storage import Store
 
 
 def print_leaderboard(rows) -> None:
-    head = f"{'#':>2} {'bot':<18}{'Elo':>7}{'matches':>8}{'hands':>9}{'bb/100':>9}{'±95%':>7}" \
+    head = f"{'#':>2} {'bot':<18}{'chips':>9}{'matches':>8}{'hands':>9}{'bb/100':>9}{'±95%':>7}" \
            f"{'VPIP':>6}{'PFR':>6}{'AF':>5}{'wins':>6}"
     print(head)
     print("-" * len(head))
     for i, r in enumerate(rows, 1):
-        print(f"{i:>2} {r['bot']:<18}{r['elo']:>7.0f}{r['matches']:>8}{r['hands']:>9}"
+        print(f"{i:>2} {r['bot']:<18}{r['chips']:>9}{r['matches']:>8}{r['hands']:>9}"
               f"{r['bb100']:>9.1f}{1.96 * r['stderr']:>7.1f}{r['vpip']:>6.0f}{r['pfr']:>6.0f}"
               f"{r['af']:>5.1f}{r['match_wins']:>6}")
 
@@ -85,9 +84,8 @@ def cmd_run(args) -> None:
             unique.append(s)
     store = Store(args.db)
     cfg = ArenaConfig(table_size=args.table_size, hands_per_match=args.hands, workers=args.workers,
-                      matchmaking=args.matchmaking, seed=args.seed)
-    elo = EloConfig(k=args.k, k_provisional=args.k_provisional)
-    arena = Arena(store, unique, cfg, elo)
+                      seed=args.seed)
+    arena = Arena(store, unique, cfg)
     n_tables = -(-len(unique) // cfg.table_size)
     print(f"{len(unique)} bots, {n_tables} tables/round x {cfg.table_size} seats, "
           f"{cfg.normalized_hands()} hands/match, {args.rounds} rounds -> {args.db}")
@@ -98,7 +96,7 @@ def cmd_run(args) -> None:
         if round_no % args.show_every == 0 or round_no == args.rounds:
             print_leaderboard(rows)
         else:
-            print(f"  leader: {rows[0]['bot']} ({rows[0]['elo']:.0f})")
+            print(f"  leader: {rows[0]['bot']} ({rows[0]['chips']:+} chips)")
 
     arena.run(args.rounds, on_round=progress)
     print("\nFinal leaderboard")
@@ -110,7 +108,7 @@ def cmd_leaderboard(args) -> None:
 
 
 def cmd_export(args) -> None:
-    kw = dict(bots=args.bot, top=args.top, min_elo=args.min_elo, run_id=args.run)
+    kw = dict(bots=args.bot, top=args.top, min_chips=args.min_chips, run_id=args.run)
     if args.what == "decisions":
         rows = iter_decisions(args.db, min_bb100=args.min_bb100, winners_only=args.winners_only,
                               limit=args.limit, **kw)
@@ -168,7 +166,7 @@ def cmd_figgie_new(args) -> None:
 
 
 def main(argv=None) -> None:
-    p = argparse.ArgumentParser(prog="pokerarena", description="Texas Hold'em bot arena with Elo ratings")
+    p = argparse.ArgumentParser(prog="pokerarena", description="Texas Hold'em bot arena ranked by chips won")
     p.add_argument("--db", default="arena.db", help="SQLite database path (default arena.db)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -180,7 +178,7 @@ def main(argv=None) -> None:
     new.add_argument("--force", action="store_true")
     new.set_defaults(fn=cmd_new)
 
-    join = sub.add_parser("join", help="play your bot against the built-ins and save the rating")
+    join = sub.add_parser("join", help="play your bot against the built-ins and save the results")
     join.add_argument("bot", help="path to a .py file, or file.py:Class")
     join.add_argument("--rounds", type=int, default=1)
     join.add_argument("--hands", type=int, default=60)
@@ -195,14 +193,11 @@ def main(argv=None) -> None:
     r.add_argument("--hands", type=int, default=600, help="hands per match (rounded up to multiple of table size)")
     r.add_argument("--table-size", type=int, default=6)
     r.add_argument("--workers", type=int, default=0, help="parallel processes (0 = all CPUs)")
-    r.add_argument("--matchmaking", choices=["random", "elo"], default="random")
     r.add_argument("--seed", type=int, default=0)
-    r.add_argument("--k", type=float, default=16.0)
-    r.add_argument("--k-provisional", type=float, default=32.0)
     r.add_argument("--show-every", type=int, default=1, help="print full leaderboard every N rounds")
     r.set_defaults(fn=cmd_run)
 
-    lb = sub.add_parser("leaderboard", help="show ratings and stats")
+    lb = sub.add_parser("leaderboard", help="show chips won and stats")
     lb.add_argument("--min-hands", type=int, default=0)
     lb.set_defaults(fn=cmd_leaderboard)
 
@@ -211,8 +206,8 @@ def main(argv=None) -> None:
     e.add_argument("out")
     e.add_argument("--format", choices=["jsonl", "csv"])
     e.add_argument("--bot", action="append", help="only this bot (repeatable)")
-    e.add_argument("--top", type=int, help="only the N highest-Elo bots")
-    e.add_argument("--min-elo", type=float)
+    e.add_argument("--top", type=int, help="only the N bots with the most chips won")
+    e.add_argument("--min-chips", type=int, help="only bots that have won at least this many chips")
     e.add_argument("--min-bb100", type=float, help="decisions only: bots with at least this win rate")
     e.add_argument("--run", type=int, help="only a given run id")
     e.add_argument("--winners-only", action="store_true", help="decisions only: hands the bot won")
