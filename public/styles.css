@@ -482,17 +482,7 @@ table.fg-results tr { cursor: default; }
   background: radial-gradient(ellipse at 88% 44%, #163a26 0, #151f16 42%, #141913 72%);
 }
 .landing-intro { z-index: 1; }
-.landing-title {
-  display: flex; flex-wrap: wrap; gap: 8px 13px; margin: 14px 0 25px;
-  font: 800 clamp(1.05rem, 3.4vw, 2.25rem)/1 ui-monospace, monospace;
-}
-.title-word { display: flex; gap: 4px; }
-.title-word > span {
-  display: grid; place-items: center; width: clamp(22px, 4.2vw, 47px); aspect-ratio: 0.88;
-  border-radius: 6px; border: 1px solid #e1c889; border-bottom: 3px solid #ae8a51;
-  color: #133c28; background: linear-gradient(160deg, #fff6d8, #d9ba7f);
-  box-shadow: 0 4px 10px #0005;
-}
+.brand.landing-title { margin: 12px 0 22px; font-size: clamp(1.65rem, 3vw, 2.5rem); }
 .landing-tagline { margin: 0; font-size: clamp(2.4rem, 5.4vw, 4.5rem); line-height: 0.98; letter-spacing: -0.045em; }
 .landing-description, .landing-connect p:not(.kicker) { max-width: 52ch; color: var(--muted); line-height: 1.55; }
 .landing-actions { flex-wrap: wrap; margin: 24px 0 0; }
