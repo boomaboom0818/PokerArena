@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PokerArena — bot rankings, live tables, connect a bot</title>
-<link rel="stylesheet" href="/styles.css?v=26">
+<link rel="stylesheet" href="/styles.css?v=27">
 </head>
 <body>
 <header class="top">
@@ -141,7 +141,7 @@
     <div class="mast">
       <div>
         <h1>Figgie</h1>
-        <p class="lede">Four bots · 40 cards · $200 pot · one minute of open trading per round</p>
+        <p class="lede">4 or 5 bots per table · 40 cards · $200 pot · one minute of open trading per round</p>
       </div>
       <div class="mast-side">
         <label class="table-pick" hidden>Table
@@ -249,7 +249,7 @@
         <ul>
           <li>The deck has 40 cards: one suit has 12, two have 10, one has 8. Nobody knows which.</li>
           <li>The goal suit is the other suit of the 12-card suit's colour (♠/♣ or ♥/♦), so it has 8 or 10 cards.</li>
-          <li>Each bot starts with $350, antes $50 into a $200 pot, and is dealt 10 cards.</li>
+          <li>Each bot starts with $350 and antes an equal share of the $200 pot. Four-seat tables ante $50 and deal 10 cards each; five-seat tables ante $40 and deal eight.</li>
           <li>For 60 seconds anyone can bid, offer, buy or sell one card at a time. Every trade clears all quotes.</li>
           <li>At the bell each goal-suit card pays $10 from the pot. The rest ($100 or $120) goes to whoever holds the most goal cards, split on a tie.</li>
           <li>P&amp;L = cash + payout − $350. Elo compares every pair of bots at the table by P&amp;L.</li>
@@ -262,7 +262,7 @@
     <div class="section-head">
       <div>
         <h1>Connect a bot</h1>
-        <p class="lede">Three games run side by side, each on its own SpacetimeDB database. Pick one below to see how to get a bot in.</p>
+        <p class="lede">Matches start with connected bots only: two for heads-up, four or five for Figgie, and six for 6-max. More tables open when enough bots are available.</p>
       </div>
     </div>
     <div class="cn-jump">
@@ -365,6 +365,6 @@ ws.onmessage = (e) => {
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=32"></script>
+<script type="module" src="/app.js?v=34"></script>
 </body>
 </html>

@@ -1,5 +1,6 @@
 """Exercise built modules on disposable loopback SpacetimeDB, optionally over old bundles."""
 import argparse
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -61,26 +62,58 @@ def main(legacy):
                 denied(lambda: call('set_paused',[False],other))
                 if db == 'figgie-arena':
                     denied(lambda: call('host_bot',['example','maker'],other))
-                    call('register',['figgie_test'],other); denied(lambda: rows('SELECT * FROM hand',other))
-                    print(db, 'remote registration, hand privacy, no hosting, pause preserved: OK',flush=True); continue
+                    denied(lambda: rows('SELECT * FROM hand',other))
+                    figgie_tokens = [other] + [json.loads(post('/v1/identity'))['token'] for _ in range(8)]
+                    for i, auth in enumerate(figgie_tokens[:3]):
+                        call('register',[f'figgie{i}'],auth); call('ready',[],auth)
+                    call('set_paused',[False]); time.sleep(1.2)
+                    # An old deployment may still have a round ending; a fresh one must be idle.
+                    if not legacy:
+                        assert not rows('SELECT * FROM seat')
+                        call('set_paused',[True])
+                        for i, auth in enumerate(figgie_tokens):
+                            call('register',[f'figgie{i}'],auth); call('ready',[],auth)
+                        call('set_paused',[False])
+                        deadline = time.monotonic()+5
+                        while len(seats := rows('SELECT table_id, kind, cash, cards FROM seat')) < 9:
+                            if time.monotonic()>deadline:
+                                log = subprocess.run(['spacetime','--config-path',str(cfg),'logs','--server',host,'--no-config',db], capture_output=True, text=True, timeout=8)
+                                raise AssertionError(f'mixed Figgie tables did not start: {seats}, players={rows("SELECT name, online, last_seen FROM player")}, control={rows("SELECT paused, round_no FROM control")}\n{log.stdout[-2000:]}\n{log.stderr[-500:]}')
+                            time.sleep(.1)
+                        assert sorted(seats).count([0,'remote',310,8]) == 5
+                        assert sorted(seats).count([1,'remote',300,10]) == 4
+                    print(db, 'remote registration, hand privacy, no hosting, seating thresholds: OK',flush=True); continue
                 denied(lambda: call('connect_bot',['example','unused'],other))
                 denied(lambda: rows('SELECT * FROM bot',other))
-                ws = WebSocket(host.replace('http:','ws:')+route+'/subscribe',PROTOCOL)
-                try:
-                    ws.sock.settimeout(15)
-                    owner = json.loads(ws.recv())['IdentityToken']['token']
-                    ws.send(json.dumps({'CallReducer':{'reducer':'register','args':'["socket_test"]','request_id':1,'flags':0}}))
-                    ws.send(json.dumps({'Subscribe':{'query_strings':['SELECT * FROM my_turn'],'request_id':2}}))
-                    while 'InitialSubscription' not in json.loads(ws.recv()): pass
-                    assert ['socket_test'] in rows('SELECT name FROM standings',other)
-                    denied(lambda: call('remove_bot',['socket_test'],other))
+                size = 2 if module.endswith('-hu') else 6
+                with ExitStack() as cleanup:
+                    sockets = {}
+                    def join(i):
+                        ws = WebSocket(host.replace('http:','ws:')+route+'/subscribe',PROTOCOL)
+                        cleanup.callback(ws.close)
+                        ws.sock.settimeout(15)
+                        owner = json.loads(ws.recv())['IdentityToken']['token']
+                        name = f'socket_test_{i}'
+                        ws.send(json.dumps({'CallReducer':{'reducer':'register','args':json.dumps([name]),'request_id':1,'flags':0}}))
+                        ws.send(json.dumps({'Subscribe':{'query_strings':['SELECT * FROM my_turn'],'request_id':2}}))
+                        while 'InitialSubscription' not in json.loads(ws.recv()): pass
+                        sockets[owner] = (ws, name)
+                    for i in range(size-1): join(i)
+                    denied(lambda: call('remove_bot',['socket_test_0'],other))
                     call('set_paused',[False])
-                    deadline = time.monotonic()+12
-                    while not (mine := rows('SELECT * FROM my_turn',owner)):
-                        if time.monotonic()>deadline: raise AssertionError('no private turn after registration')
+                    time.sleep(1.8)
+                    assert not rows('SELECT * FROM table_state')
+                    for i in range(size-1, size*2): join(i)
+                    deadline = time.monotonic()+5
+                    while len(tables := rows('SELECT names FROM table_state')) < 2:
+                        if time.monotonic()>deadline: raise AssertionError('second full poker table did not start')
                         time.sleep(.1)
+                    names = [name for (lineup,) in tables for name in lineup.split(',')]
+                    assert len(names) == len(set(names)) == size*2 and all(n.startswith('socket_test_') for n in names)
+                    owner, mine = next((auth, turns) for auth in sockets if (turns := rows('SELECT * FROM my_turn',auth)))
+                    ws, name = sockets[owner]
                     turn_id, _, table_id, _, raw = mine[0]; obs = json.loads(raw)
-                    assert obs['players'][obs['seat']]['name']=='socket_test' and len(obs['hole'])==2
+                    assert obs['players'][obs['seat']]['name']==name and len(obs['hole'])==2
                     assert not rows('SELECT * FROM my_turn',other)
                     seats=json.loads(rows(f'SELECT seats FROM table_state WHERE table_id = {table_id}',other)[0][0])
                     assert all(s['hole']==['??','??'] for s in seats)
@@ -90,21 +123,21 @@ def main(legacy):
                         tx = json.loads(ws.recv()).get('TransactionUpdate',{})
                         if tx.get('reducer_call',{}).get('request_id') == 3:
                             assert 'Committed' in tx['status'],tx['status']; break
-                finally: ws.close()
                 # Run the same Python command advertised on the website, through a rated match.
-                proc=subprocess.Popen([sys.executable,'-m','pokerarena','connect','bots_user/example_bot.py','--game',
-                                       'heads-up' if module.endswith('-hu') else '6-max','--name','cli_test','--host',host.replace('http:','ws:')],
-                                      cwd=ROOT,env={**os.environ,'POKERARENA_HOME':tmp},stdout=subprocess.DEVNULL)
-                controls.append(proc)
+                for i in range(size):
+                    proc=subprocess.Popen([sys.executable,'-m','pokerarena','connect','bots_user/example_bot.py','--game',
+                                           'heads-up' if module.endswith('-hu') else '6-max','--name',f'cli_test_{i}','--host',host.replace('http:','ws:')],
+                                          cwd=ROOT,env={**os.environ,'POKERARENA_HOME':tmp},stdout=subprocess.DEVNULL)
+                    controls.append(proc)
                 deadline = time.monotonic()+45
                 while time.monotonic()<deadline:
-                    matches = rows("SELECT matches FROM standings WHERE name = 'cli_test'",other)
+                    matches = rows("SELECT matches FROM standings WHERE name = 'cli_test_0'",other)
                     if matches and matches[0][0]>0: break
                     assert proc.poll() is None, 'CLI exited prematurely'
                     time.sleep(.25)
                 else: raise AssertionError('CLI bot did not finish a match')
-                proc.terminate(); proc.wait(timeout=5)
-                print(db,'CLI rated match, private live cards, turn ownership, no hosting, pause preserved: OK',flush=True)
+                for p in controls[-size:]: p.terminate(); p.wait(timeout=5)
+                print(db,'full tables only, automatic scale-out, CLI rated match and private turns: OK',flush=True)
         finally:
             for p in controls:
                 if p.poll() is None: p.terminate(); p.wait(timeout=5)

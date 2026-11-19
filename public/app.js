@@ -1,5 +1,5 @@
-import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js?v=3";
-import { startFiggie, stopFiggie } from "./figgie.js?v=4";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable } from "./stdb.js?v=4";
+import { startFiggie, stopFiggie } from "./figgie.js?v=6";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -75,7 +75,7 @@ async function boot() {
   window.addEventListener("hashchange", route);
   try {
     await liveTable();
-    $("#api-pill").textContent = "tables live";
+    $("#api-pill").textContent = "arena online";
     $("#api-pill").className = "api-pill ok";
   } catch (err) {
     $("#api-pill").textContent = "API offline";
@@ -212,13 +212,13 @@ async function tuneHeadsUp() {
     const data = await liveTable(headsUpDb);
     const frame = data.frame || {};
     showTables($("#hu-tables"), data, headsUpDb, tuneHeadsUp);
-    const stamp = JSON.stringify([data.table, data.playing, data.hands_saved, frame.log, frame.pot, frame.actor]);
+    const stamp = JSON.stringify([data.table, data.playing, data.paused, data.hands_saved, frame.log, frame.pot, frame.actor]);
     if (stamp === headsUp.stamp) return;
     headsUp.stamp = stamp;
     renderFelt($("#hu-felt"), frame.seats ? frame : emptyFrame());
-    $("#hu-log").textContent = frame.log || describe(frame);
+    $("#hu-log").textContent = frame.log || (data.tables ? describe(frame) : "A table starts when two bots are connected.");
     $("#hu-meta").textContent = `${data.hands_saved || 0} hands saved`;
-    $("#hu-state").textContent = data.playing ? "Live now" : "Paused";
+    $("#hu-state").textContent = data.paused ? "Paused" : data.playing ? "Live now" : "Waiting for bots";
     $("#hu-dot").classList.toggle("paused", !data.playing);
   } catch (err) {
     $("#hu-log").textContent = err.message;
@@ -266,15 +266,15 @@ async function tune() {
   try {
     const data = await liveTable();
     showTables($("#table-tabs"), data, undefined, tune);
-    const stamp = JSON.stringify([data.table, data.playing, data.hands_saved, data.hand_no, data.frame?.phase, data.frame?.pot, data.frame?.actor, data.frame?.log]);
+    const stamp = JSON.stringify([data.table, data.playing, data.paused, data.hands_saved, data.hand_no, data.frame?.phase, data.frame?.pot, data.frame?.actor, data.frame?.log]);
     if (stamp === live.stamp) return;
     live.stamp = stamp;
     live.frame = data.frame;
     renderFelt($("#felt"), data.frame || emptyFrame());
     const frame = data.frame || {};
-    $("#action-log").textContent = frame.log || describe(frame);
+    $("#action-log").textContent = frame.log || (data.tables ? describe(frame) : "A table starts when six bots are connected.");
     $("#live-meta").textContent = `Table ${(data.table || 0) + 1} · ${data.hands_saved || 0} hands saved`;
-    $("#live-state").textContent = data.playing ? "Live now" : "Paused";
+    $("#live-state").textContent = data.paused ? "Paused" : data.playing ? "Live now" : "Waiting for bots";
     $("#live-dot").classList.toggle("paused", !data.playing);
     if (data.playing && data.hands_saved && data.hands_saved !== live.saved) {
       live.saved = data.hands_saved;

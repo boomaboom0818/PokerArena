@@ -107,6 +107,7 @@ class State:
     trades: list = field(default_factory=list)
     players: list = field(default_factory=list)
     goal: str = ""
+    pot: int = 0
 
     @property
     def my_quotes(self) -> list:
@@ -185,6 +186,7 @@ def build_state(cache: Cache, me: str, now: float | None = None) -> State:
         s.round_no = tbl["round_no"]
         s.phase = tbl["phase"]
         s.goal = tbl["goal"]
+        s.pot = tbl["pot"]
         s.time_left = max(0.0, tbl["ends_at"] / 1000 - now) if tbl["phase"] == "trading" else 0.0
     mine = next((r for r in cache.rows("my_hand") if r["table_id"] == tid), None)
     if mine:
@@ -379,7 +381,7 @@ class FiggieBot:
 
     # hooks -------------------------------------------------------------
     def on_round_start(self, s: State) -> None:
-        """A new deal: you have a fresh hand and $300 after the ante."""
+        """A new deal: $300 after the ante at four seats, or $310 at five."""
 
     def on_update(self, s: State) -> None:
         """Called every ``tick_seconds`` (0.25 s) during trading with the latest state."""

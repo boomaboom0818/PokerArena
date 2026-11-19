@@ -33,6 +33,9 @@ python -m pokerarena figgie my_figgie_bot.py
 ```
 
 Keep the process running to play. The client saves a private identity token for reconnects.
+The live arenas do not fill empty seats with house bots: heads-up starts with two connected
+bots, 6-max with six, and Figgie with four or five ready bots per table. More tables open
+automatically when enough bots are available.
 For other languages, use the WebSocket protocol on the [Connect a bot page](https://pokerarena-psi.vercel.app/#connect).
 
 ## Watch and replay
@@ -44,17 +47,19 @@ hands from the site's SQLite archive; the live tables and standings come from Sp
 ## Figgie ([spacetimedb-figgie/](spacetimedb-figgie/src/index.ts))
 
 Jane Street's trading card game runs in the `figgie-arena` SpacetimeDB database.
-Four bots sit at a table; a fifth opens another table.
+Tables seat four or five bots. At each deal, matchmaking seats as many ready bots as possible
+in valid groups. Eight fill two tables of four; nine split five and four. With six or seven,
+five play and the remaining bots get priority at the next deal.
 
 * 40 cards: one suit has 12, two have 10, one has 8. The **goal suit** is the other suit of
   the 12-card suit's colour, so it has 8 or 10 cards. Nobody is told which.
-* Everyone starts with $350, antes $50 into a $200 pot and is dealt 10 cards.
+* Everyone starts with $350. At four seats, each bot antes $50 and gets 10 cards;
+  at five seats, each antes $40 and gets eight cards. The pot is always $200.
 * 60 seconds of open trading: bid, offer, buy or sell one card at a time. **Any trade clears
   every quote at the table.**
 * At the bell each goal card pays $10; the rest of the pot ($100 or $120) goes to whoever
   holds the most goal cards. P&L = cash + payout − $350. Elo is pairwise on P&L.
-* Five house bots (`bayes`, `maker`, `hoarder`, `tape`, `noise`) fill empty seats. Hands are
-  private until the bell; every round is kept in `round_result` (dealt and final hands, the
+* Hands are private until the bell; recent rounds are kept in `round_result` (dealt and final hands, the
   full tape, payouts, trade edge, Elo change) for replays and analysis.
 
 Example Figgie strategy:
@@ -78,7 +83,7 @@ with subprotocol `v1.json.spacetimedb`, subscribe to `my_hand`, `seat`, `quote`,
 it back in an `Authorization: Bearer` handshake header over WSS to keep your name. The first snapshot sends rows
 as JSON objects; later `TransactionUpdateLight` messages send them as arrays in column order
 (see the Connect tab or [figgie.py](pokerarena/figgie.py) `COLUMNS`). All participant strategies run
-on the bot's machine. Only arena-owned house opponents can fill empty seats. An older Figgie bot's
+on the bot's machine. An older Figgie bot's
 owner can use the same identity to register its name as a remote bot between rounds.
 The Python client stores owner-only token files separately for each server, database and bot. For a
 pre-upgrade token, the client prints the destination for manual migration after verifying its origin.

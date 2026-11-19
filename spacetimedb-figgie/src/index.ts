@@ -1,9 +1,10 @@
-// Figgie arena. Four bots per table, 40 cards, a $200 pot, 60 seconds of trading.
+// Figgie arena. Four or five bots, 40 cards, a $200 pot, 60 seconds of trading.
 //
 // Rules (Jane Street's Figgie):
 //   * One suit has 12 cards, two have 10, one has 8. The goal suit is the suit of the
 //     same colour as the 12-card suit, so it holds 8 or 10 cards.
-//   * Everyone starts with $350 and antes $50 into a $200 pot, then gets 10 cards.
+//   * Everyone starts with $350 and antes an equal share of the $200 pot.
+//     Four seats get 10 cards each; five seats get 8 cards each.
 //   * Bots post bids and offers for one card of a suit, or take the best one.
 //     Any trade clears every resting quote at the table.
 //   * At the bell each goal-suit card pays $10 from the pot. Whatever is left goes to
@@ -17,15 +18,11 @@ import { ScheduleAt } from 'spacetimedb';
 import { Identity } from 'spacetimedb';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import { dealRandom } from '@pokerarena/shared/shuffle';
+import { DECK_SIZE, POT, START_CASH, dealHands, tableSizes } from './seating';
 
 const SUITS = ['spades', 'clubs', 'hearts', 'diamonds'] as const;
 type Suit = (typeof SUITS)[number];
 const PARTNER = [1, 0, 3, 2]; // same colour: spades<->clubs, hearts<->diamonds
-const SEATS = 4;
-const HAND_SIZE = 10;
-const START_CASH = 350;
-const ANTE = 50;
-const POT = ANTE * SEATS;
 const GOAL_PAY = 10;
 const ROUND_MS = 60_000;
 const BREAK_MS = 9_000;
@@ -146,6 +143,13 @@ const hosted = table({ name: 'hosted' }, {
   source: t.string(),
 });
 
+// HTTP calls can emit connect/disconnect events too, so their explicit ready
+// lease must survive disconnection; ordinary WebSocket seats don't get a lease.
+const readyLease = table({ name: 'ready_lease' }, {
+  name: t.string().primaryKey(),
+  until: t.f64(),
+});
+
 const control = table({ name: 'control', public: true }, {
   id: t.u32().primaryKey(),
   paused: t.bool(),
@@ -159,7 +163,7 @@ const tickTimer = table({ name: 'tick_timer' }, {
 });
 
 const spacetimedb = schema({
-  player, figgieTable, seat, hand, quote, trade, roundResult, dealer, hosted, control, tickTimer,
+  player, figgieTable, seat, hand, quote, trade, roundResult, dealer, hosted, readyLease, control, tickTimer,
 }, { env: { FIGGIE_DEAL_KEY: t.string() } });
 export default spacetimedb;
 
@@ -204,7 +208,7 @@ function control0(ctx: Ctx) {
 function eligibleUsers(ctx: Ctx, now: number): string[] {
   const out: string[] = [];
   for (const p of ctx.db.player.iter()) {
-    if (p.kind === 'remote' && (p.online || now - p.lastSeen < ONLINE_GRACE_MS)) out.push(p.name);
+    if (p.kind === 'remote' && (p.online || (ctx.db.readyLease.name.find(p.name)?.until ?? 0) > now)) out.push(p.name);
   }
   return out;
 }
@@ -219,27 +223,21 @@ function clearTables(ctx: Ctx): void {
 
 function deal(ctx: Ctx): void {
   const now = nowMs(ctx);
+  const eligible = eligibleUsers(ctx, now);
+  const sizes = tableSizes(eligible.length);
+  if (!sizes.length && !ctx.db.figgieTable.count()) return;
   const ctl = control0(ctx);
   const roundNo = ctl.roundNo + 1;
-  ctx.db.control.id.update({ ...ctl, roundNo });
+  if (sizes.length) ctx.db.control.id.update({ ...ctl, roundNo });
   clearTables(ctx);
 
   const random = dealRandom(ctx.env.FIGGIE_DEAL_KEY, `${ctx.databaseIdentity.toHexString()}:${roundNo}:${ctx.timestamp.microsSinceUnixEpoch}`);
-  const users = random.shuffle(eligibleUsers(ctx, now));
-  const tableCount = Math.max(1, Math.ceil(users.length / SEATS));
-  const lineups: string[][] = Array.from({ length: tableCount }, () => []);
-  users.forEach((name, i) => lineups[i % tableCount].push(name));
-  let rot = roundNo;
-  for (const lineup of lineups) {
-    const used = new Set(lineup);
-    while (lineup.length < SEATS) {
-      const pick = HOUSE[rot++ % HOUSE.length];
-      if (!used.has(pick)) {
-        used.add(pick);
-        lineup.push(pick);
-      }
-    }
-  }
+  const tableCount = sizes.length;
+  // Give anyone benched in the previous round first claim on an available seat.
+  const wasSeated = new Set([...ctx.db.player.iter()].filter(p => p.tableId >= 0).map(p => p.name));
+  const users = random.shuffle(eligible).sort((a,b) => Number(wasSeated.has(a)) - Number(wasSeated.has(b)));
+  const seated = random.shuffle(users.slice(0, sizes.reduce((a,b) => a+b, 0)));
+  const lineups = sizes.map(size => seated.splice(0, size));
 
   for (const p of [...ctx.db.player.iter()]) {
     if (p.tableId !== -1) ctx.db.player.name.update({ ...p, tableId: -1 });
@@ -260,18 +258,16 @@ function deal(ctx: Ctx): void {
     const deck: number[] = [];
     counts.forEach((n, s) => { for (let i = 0; i < n; i++) deck.push(s); });
     random.shuffle(deck);
-    const starts: number[][] = [];
+    const starts = dealHands(deck, order.length);
+    const ante = POT / order.length;
     order.forEach((name, i) => {
-      const cards = deck.slice(i * HAND_SIZE, (i + 1) * HAND_SIZE);
-      const h = [0, 0, 0, 0];
-      for (const c of cards) h[c] += 1;
-      starts.push(h);
+      const h = starts[i];
       const seatKey = tableId * 8 + i;
       const p = ctx.db.player.name.find(name)!;
       ctx.db.player.name.update({ ...p, tableId });
       ctx.db.seat.insert({
         seatKey, tableId, seat: i, name, kind: p.kind,
-        cash: START_CASH - ANTE, cards: HAND_SIZE, buys: 0, sells: 0, actions: 0,
+        cash: START_CASH - ante, cards: DECK_SIZE / order.length, buys: 0, sells: 0, actions: 0,
       });
       ctx.db.hand.insert({
         seatKey, tableId, owner: p.kind === 'remote' ? p.owner : Identity.zero(), name,
@@ -553,7 +549,7 @@ function settle(ctx: Ctx, tableId: number): void {
   const goalHeld = hands.map(h => held(h, goal));
   const most = Math.max(...goalHeld);
   const leaders = seats.map((_, i) => i).filter(i => goalHeld[i] === most);
-  const bonusPot = POT - GOAL_PAY * goalCount;
+  const bonusPot = tbl.pot - GOAL_PAY * goalCount;
   const share = Math.floor(bonusPot / leaders.length);
   const tape = [...ctx.db.trade.tableId.filter(tableId)].filter(tr => tr.roundNo === tbl.roundNo).sort((a, b) => a.at - b.at);
   const edges = seats.map(() => 0);
@@ -648,7 +644,6 @@ function step(ctx: Ctx): void {
   for (const tb of tables) {
     if (tb.phase !== 'trading') continue;
     if (now >= tb.endsAt) settle(ctx, tb.tableId);
-    else runBots(ctx, tb.tableId);
   }
 }
 
@@ -678,7 +673,7 @@ export const init = spacetimedb.init(ctx => {
 function touch(ctx: Ctx, online?: boolean): void {
   for (const p of ctx.db.player.owner.filter(ctx.sender)) {
     if (p.kind !== 'remote') continue;
-    ctx.db.player.name.update({ ...p, lastSeen: nowMs(ctx), online: online ?? p.online });
+    ctx.db.player.name.update({ ...p, lastSeen: online === false ? 0 : nowMs(ctx), online: online ?? p.online });
   }
 }
 
@@ -721,7 +716,15 @@ export const register = spacetimedb.reducer({ name: t.string() }, (ctx, { name }
 });
 
 /** Keep an HTTP-only bot seated (WebSocket bots stay seated while connected). */
-export const ready = spacetimedb.reducer(ctx => touch(ctx));
+export const ready = spacetimedb.reducer(ctx => {
+  const now = nowMs(ctx);
+  for (const p of ctx.db.player.owner.filter(ctx.sender)) {
+    if (p.kind !== 'remote') continue;
+    const lease = { name: p.name, until: now + ONLINE_GRACE_MS };
+    if (ctx.db.readyLease.name.find(p.name)) ctx.db.readyLease.name.update(lease);
+    else ctx.db.readyLease.insert(lease);
+  }
+});
 
 function mySeat(ctx: Ctx) {
   let me: ReturnType<typeof ctx.db.player.name.find> = null;
@@ -772,6 +775,7 @@ export const leave = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) =
     throw new SenderError('wait for the bell before removing a seated bot');
   }
   ctx.db.player.name.delete(name);
+  ctx.db.readyLease.name.delete(name);
   if (ctx.db.hosted.name.find(name)) ctx.db.hosted.name.delete(name);
 });
 

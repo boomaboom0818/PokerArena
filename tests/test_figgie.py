@@ -106,6 +106,7 @@ class CacheTests(unittest.TestCase):
         ])
         s = build_state(cache, "me", now=30.0)
         self.assertTrue(s.seated)
+        self.assertEqual(s.pot, 200)
         self.assertEqual(s.hand["spades"], 5)
         self.assertEqual(s.dealt["spades"], 4)
         self.assertEqual((s.book["clubs"].bid, s.book["clubs"].bidder), (6, "me"))
@@ -117,6 +118,18 @@ class CacheTests(unittest.TestCase):
 
     def test_not_seated(self):
         self.assertFalse(build_state(Cache(), "nobody").seated)
+
+    def test_five_seat_state_isolated_from_other_tables(self):
+        cache = Cache()
+        players = [{"seat_key": 8 + i, "table_id": 1, "seat": i, "name": f"bot{i}", "cash": 310, "cards": 8} for i in range(5)]
+        cache.apply([
+            tbl("figgie_table", [{"table_id": 1, "round_no": 2, "phase": "trading", "goal": "", "ends_at": 60_000, "pot": 200}]),
+            tbl("seat", [{"seat_key": 0, "table_id": 0, "seat": 0, "name": "visitor", "cash": 300, "cards": 10}, *players]),
+            tbl("my_hand", [{"seat_key": 12, "table_id": 1, "spades": 2, "clubs": 3, "hearts": 1, "diamonds": 2, "dealt": "[2,3,1,2]"}]),
+        ])
+        state = build_state(cache, "bot4", now=30)
+        self.assertEqual((state.table_id, len(state.players), state.cash, state.pot), (1, 5, 310, 200))
+        self.assertEqual(sum(state.dealt.values()), 8)
 
 
 class FrameTests(unittest.TestCase):

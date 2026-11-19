@@ -1,8 +1,8 @@
 import { ScheduleAt } from 'spacetimedb';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import { dealRandom } from './deal-random.ts';
-import { BB, STACK, HOUSE, houseAction } from './holdem-cards.ts';
-import { deal, act, board, observation, publicFrame, MATCH_HANDS, type Hand } from './holdem-engine.ts';
+import { STACK, HOUSE } from './holdem-cards.ts';
+import { deal, act, observation, publicFrame, MATCH_HANDS, type Hand } from './holdem-engine.ts';
 
 export function pokerArena(size: 2 | 6) {
   const houses = HOUSE.slice(0, size);
@@ -45,20 +45,17 @@ export function pokerArena(size: 2 | 6) {
     });
   }
 
-  // Advance up to the next external decision or end of hand. Only named house seats run built-ins.
+  // Advance to the next connected player's decision or the end of the current hand.
   function advance(ctx: Ctx, tableId: number, m: Match) {
     const h = m.hand;
     while (!h.done) {
       const s = h.seats[h.actor], obs = observation(h);
-      if (!houses.includes(s.name) && ctx.db.online.name.find(s.name)) {
+      if (ctx.db.online.name.find(s.name)) {
         ctx.db.turn.insert({ turnId: ctx.newUuidV7().toString(), owner: ctx.db.botOwner.name.find(s.name)!.owner,
           tableId, deadlineMs: now(ctx)+10000, observation: JSON.stringify(obs) });
         break;
       }
-      let action = obs.to_call ? 'fold' : 'check'; // disconnected seat: resolve without running a strategy
-      if (houses.includes(s.name)) action = houseAction(s.name, s.hole, board(h), obs.to_call, s.stack, () => ctx.random());
-      if (action === 'raise' && !obs.can_raise) action = 'call';
-      act(h, action, Math.min(obs.max_raise_to, Math.max(obs.min_raise_to, h.current*2, BB)));
+      act(h, obs.to_call ? 'fold' : 'check');
     }
     if (h.done) {
       h.seats.forEach((s,i) => { m.nets[i] += s.stack-STACK; });
@@ -74,12 +71,17 @@ export function pokerArena(size: 2 | 6) {
   function step(ctx: Ctx) {
     if (paused(ctx)) return;
     const occupied = new Set<number>(), seated = new Set<string>();
-    let matchEnded = false, hasHouseSeats = false;
+    const returning = new Set<string>();
     for (const row of [...ctx.db.active.iter()]) {
       const m: Match = JSON.parse(row.state), id = row.tableId, names = m.hand.seats.map(s => s.name);
-      if (m.hand.done && m.hand.no === MATCH_HANDS) { ctx.db.active.tableId.delete(id); matchEnded = true; continue; }
+      // Retire legacy house-filled matches, and never deal a new hand without every player.
+      if (names.some(n => houses.includes(n)) || (m.hand.done && (m.hand.no === MATCH_HANDS || names.some(n => !ctx.db.online.name.find(n))))) {
+        ctx.db.turn.tableId.delete(id);
+        ctx.db.active.tableId.delete(id);
+        names.forEach(n => returning.add(n));
+        continue;
+      }
       occupied.add(id); names.forEach(n => seated.add(n));
-      hasHouseSeats ||= names.some(n => houses.includes(n));
       if (m.hand.done) { m.hand = newHand(ctx,id,names,m.hand.no+1); advance(ctx,id,m); continue; }
       const p = ctx.db.turn.tableId.find(id)!;
       if (now(ctx) >= p.deadlineMs || !ctx.db.online.name.find(names[m.hand.actor])) {
@@ -88,13 +90,11 @@ export function pokerArena(size: 2 | 6) {
         advance(ctx,id,m);
       }
     }
-    const waiting = ctx.random.shuffle([...ctx.db.online.iter()].map(p => p.name).filter(n => !seated.has(n)));
-    // Group arrivals with returning players instead of opening a separate house-filled table for each arrival.
-    const seatWaiting = matchEnded || !hasHouseSeats;
-    while ((seatWaiting && waiting.length) || !occupied.size) {
+    const waiting = ctx.random.shuffle([...ctx.db.online.iter()].map(p => p.name).filter(n => !seated.has(n)))
+      .sort((a,b) => Number(returning.has(a)) - Number(returning.has(b)));
+    while (waiting.length >= size) {
       let id = 0; while (occupied.has(id)) id++;
       const names = waiting.splice(0,size);
-      names.push(...ctx.random.shuffle([...houses]).slice(0,size-names.length));
       occupied.add(id);
       advance(ctx,id,{ hand: newHand(ctx,id,ctx.random.shuffle(names),1), nets: names.map(() => 0) });
     }

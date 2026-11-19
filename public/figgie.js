@@ -2,7 +2,7 @@
 // WebSocket protocol a bot uses, so what you see is exactly what the bots see
 // (plus the hands, which are published at the bell).
 
-import { HOST as HTTP_HOST } from "./stdb.js?v=3";
+import { HOST as HTTP_HOST } from "./stdb.js?v=4";
 const WS_HOST = HTTP_HOST.replace(/^https:/, "wss:");
 const DB = "figgie-arena";
 const PROTOCOL = "v1.json.spacetimedb";
@@ -12,7 +12,7 @@ const GLYPH = { spades: "♠", clubs: "♣", hearts: "♥", diamonds: "♦" };
 const SUIT_COLOR = { spades: "#c9d3e0", clubs: "#7dcea0", hearts: "#e8705f", diamonds: "#e4b24a" };
 const ROUND_S = 60;
 const START_CASH = 350;
-const ANTE = 50;
+const POT = 200;
 
 // Initial rows arrive as objects, later updates as arrays in column order.
 const COLUMNS = {
@@ -169,9 +169,9 @@ async function loadResults(extra = 40) {
       r.playersParsed = JSON.parse(r.players);
       r.tapeParsed = JSON.parse(r.tape);
       return SUITS.includes(r.goal) && SUITS.includes(r.twelve) &&
-        Array.isArray(r.playersParsed) && r.playersParsed.length === 4 && r.playersParsed.every(p =>
+        Array.isArray(r.playersParsed) && [4, 5].includes(r.playersParsed.length) && r.playersParsed.every(p =>
           typeof p.name === 'string' && typeof p.kind === 'string' && counts(p.start) && counts(p.end) && numeric.every(k => Number.isFinite(p[k]))) &&
-        Array.isArray(r.tapeParsed) && r.tapeParsed.length <= 3600 && r.tapeParsed.every(t => Array.isArray(t) &&
+        Array.isArray(r.tapeParsed) && r.tapeParsed.length <= 900 * r.playersParsed.length && r.tapeParsed.every(t => Array.isArray(t) &&
           Number.isFinite(t[0]) && SUITS.includes(t[1]) && Number.isInteger(t[2]) && t[2] > 0 && t[2] <= 400 && typeof t[3] === 'string' && typeof t[4] === 'string');
     } catch { return false; }
   }).sort((a, b) => b.round_no - a.round_no || a.table_id - b.table_id);
@@ -215,7 +215,19 @@ function render() {
   const { tables, tbl } = current();
   pickTables(tables);
   if (!tbl) {
-    $("#fg-state").textContent = "Waiting for the first deal";
+    $("#fg-state").textContent = "Waiting for bots";
+    $("#fg-meta").textContent = "No active tables";
+    $("#fg-log").textContent = "A table starts when at least four bots are connected.";
+    if (fg.lastPhase !== "waiting") {
+      fg.lastPhase = "waiting";
+      $("#fg-felt").replaceChildren();
+      $("#fg-book tbody").replaceChildren();
+      $("#fg-tape").replaceChildren();
+      $("#fg-tape-count").textContent = "";
+      renderChart($("#fg-chart"), []);
+      if (!fg.results.length) refreshResults();
+    }
+    renderBoard();
     return;
   }
   if (tbl.phase !== fg.lastPhase) {
@@ -263,8 +275,9 @@ function renderHeader() {
     ? `Round ${tbl.round_no} · trading · ${clockText(tbl.ends_at - now)} left`
     : `Round ${tbl.round_no} · bell · next deal in ${clockText(tbl.next_at - now)}`;
   $("#fg-state").textContent = state;
-  const remote = all("seat").filter((s) => s.kind !== "house").length;
-  $("#fg-meta").textContent = `Table ${tbl.table_id + 1} of ${tables.length}` + (remote ? ` · ${remote} visiting bot${remote > 1 ? "s" : ""}` : " · house bots only");
+  const seats = all("seat").filter((s) => s.table_id === tbl.table_id);
+  const remote = seats.filter((s) => s.kind === "remote").length;
+  $("#fg-meta").textContent = `Table ${tbl.table_id + 1} of ${tables.length} · ${seats.length} seats` + (remote ? ` · ${remote} visiting bot${remote > 1 ? "s" : ""}` : " · house bots only");
   $("#fg-log").textContent = tbl.last_trade || "Cards are dealt. Waiting for the first trade.";
   const clock = $("#fg-clock");
   if (clock) {
@@ -290,7 +303,8 @@ function renderFelt() {
   const result = tbl.phase === "reveal" ? resultFor(tbl) : null;
   const goal = tbl.goal;
   const counts = tbl.counts ? tbl.counts.split(",").map(Number) : null;
-  const pos = ["n", "e", "s", "w"];
+  root.classList.toggle("five-seats", seats.length === 5);
+  const pos = ["n", "e", "s", "w", "extra"];
   const seatHtml = seats.map((s, i) => {
     const flow = Object.fromEntries(SUITS.map((x) => [x, 0]));
     for (const t of trades) {
@@ -309,7 +323,7 @@ function renderFelt() {
     const pnl = r ? `<div class="fg-pnl ${r.pnl >= 0 ? "up" : "down"}">${money(r.pnl)}${r.bonus ? ` <span class="fg-bonus">bonus</span>` : ""}</div>` : "";
     const quoteLine = r ? `<div class="fg-quotes muted">${r.goalCards} goal · payout $${r.payout} · edge ${money(r.edge)}</div>`
       : `<div class="fg-quotes">${mine.map((q) => `<span class="q-${q.side === "bid" ? "bid" : "ask"}">${q.side === "bid" ? "bid" : "ask"} ${GLYPH[q.suit]} ${q.price}</span>`).join("") || '<span class="muted">no quotes</span>'}</div>`;
-    return `<div class="fg-seat fg-${pos[i] || "n"}" data-bot="${esc(s.name)}">
+    return `<div class="fg-seat fg-${pos[i]}" data-bot="${esc(s.name)}">
       <div class="fg-seat-head"><span class="who">${esc(s.name)}</span><span class="kind kind-${esc(s.kind)}">${s.kind === "remote" ? "live" : esc(s.kind)}</span></div>
       <div class="fg-money"><span>$${s.cash}</span><span class="muted">${s.cards} cards · ${s.buys}B ${s.sells}S</span></div>
       <div class="fg-hand">${cells}</div>
@@ -458,10 +472,11 @@ function replayFrames(r) {
   const players = r.playersParsed;
   const goalIdx = SUITS.indexOf(r.goal);
   const hands = players.map((p) => [...p.start]);
-  const cash = players.map(() => START_CASH - ANTE);
+  const ante = POT / players.length;
+  const cash = players.map(() => START_CASH - ante);
   const edge = players.map(() => 0);
   const snap = (line, i) => ({ line, i, hands: hands.map((h) => [...h]), cash: [...cash], edge: [...edge] });
-  const frames = [snap("Cards dealt. Everyone antes $50.", null)];
+  const frames = [snap(`Cards dealt. Everyone antes $${ante}.`, null)];
   r.tapeParsed.forEach((t, i) => {
     const [ms, suit, price, buyer, seller] = t;
     const s = SUITS.indexOf(suit);
@@ -501,7 +516,9 @@ function showReplay(index) {
   scrub.max = String(rp.frames.length - 1);
   scrub.value = String(rp.index);
   const most = Math.max(...f.hands.map((h) => h[goalIdx]));
-  $("#fg-replay-seats").innerHTML = r.playersParsed.map((p, i) => {
+  const seats = $("#fg-replay-seats");
+  seats.classList.toggle("five-seats", r.playersParsed.length === 5);
+  seats.innerHTML = r.playersParsed.map((p, i) => {
     const t = f.i != null ? r.tapeParsed[f.i] : null;
     const role = t ? (t[3] === p.name ? " buying" : t[4] === p.name ? " selling" : "") : "";
     return `<div class="fg-rseat${role}">

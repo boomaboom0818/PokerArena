@@ -36,12 +36,14 @@ export function pickTable(id, db = DB) {
 export async function liveTable(db = DB) {
   const [result, controls] = await Promise.all([sql("SELECT * FROM table_state", db), sql("SELECT paused FROM control", db)]);
   const all = rows(result).sort((a,b) => Number(a.table_id)-Number(b.table_id));
-  if (!all.length) return { playing: false, tables: 0, frame: { seats: [], board: [], pot: 0 } };
+  const paused = rows(controls)[0]?.paused === true;
+  if (!all.length) return { paused, playing: false, tables: 0, frame: { seats: [], board: [], pot: 0 } };
   const row = all.find((r) => Number(r.table_id) === pickedTables.get(db)) || all[0];
   const seats = JSON.parse(row.seats || "[]").map((s, i) => ({ ...s, seat: i, is_button: s.is_button ?? (i === 0) }));
   return {
     live: true,
-    playing: rows(controls)[0]?.paused === false,
+    paused,
+    playing: !paused,
     tables: all.length,
     tableIds: all.map(r => Number(r.table_id)),
     table: Number(row.table_id),
