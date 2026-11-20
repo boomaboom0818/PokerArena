@@ -93,6 +93,26 @@ export async function leaderboard(db = DB) {
   return { bots };
 }
 
+// Recent finished hands (summary columns only), newest first.
+export async function recentHands(db = DB) {
+  const result = await sql("SELECT hand_id, table_id, hand_no, ended_at, names, nets, pot, board, showdown FROM hand_log", db);
+  return rows(result).map((h) => {
+    const names = String(h.names || "").split(","), nets = String(h.nets || "").split(",").map(Number);
+    return { hand_id: Number(h.hand_id), table_id: Number(h.table_id), hand_no: Number(h.hand_no), ended_at: Number(h.ended_at),
+      pot: Number(h.pot), board: String(h.board || ""), showdown: h.showdown === true,
+      players: names.map((bot, seat) => ({ seat, bot, net: nets[seat] || 0 })) };
+  }).sort((a, b) => b.hand_id - a.hand_id);
+}
+
+// Full replay for one hand, in the shape handFrames() reads.
+export async function handReplay(id, db = DB) {
+  const n = Number(id);
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error("bad hand id");
+  const row = rows(await sql(`SELECT hand_id, data FROM hand_log WHERE hand_id = ${n}`, db))[0];
+  if (!row) throw new Error("That hand is no longer stored.");
+  return { ...JSON.parse(row.data), hand_id: n };
+}
+
 export const headsUpDb = HU_DB;
 
 export async function arenaPreview(game, now = Date.now()) {

@@ -98,3 +98,25 @@ export function publicFrame(h: Hand) {
       hole: h.done ? s.hole.map(cardStr) : ['??','??'], ...(h.done ? { net: s.stack-STACK } : {}),
     }))) };
 }
+
+const CATEGORIES = ['high card', 'pair', 'two pair', 'three of a kind', 'straight', 'flush', 'full house', 'four of a kind', 'straight flush'];
+
+// A finished hand in the shape the site's replay viewer reads (same fields as the SQLite archive's
+// /api/hands/<id>). Only call this once the hand is over: it reveals every hole card.
+export function replayPayload(h: Hand) {
+  if (!h.done) throw new Error('hand is still in play');
+  const cards = board(h), live = h.seats.filter(s => !s.folded).length;
+  const showdown = live > 1;
+  return {
+    hand_no: h.no, button: h.button, board: cards.map(cardStr), pot: pot(h), showdown, small_blind: SB, big_blind: BB,
+    players: h.seats.map((s, seat) => {
+      const fold = h.history.find(e => e.seat === seat && e.kind === 'fold');
+      return { seat, bot: s.name, position: position(h, seat), hole: s.hole.map(cardStr), stack: STACK,
+        final_stack: s.stack, net: s.stack - STACK, showdown: showdown && !s.folded, folded_street: fold ? fold.street : -1,
+        category: showdown && !s.folded ? CATEGORIES[evaluate([...s.hole, ...h.runout]) >> 20] : null };
+    }),
+    actions: h.history.map(e => ({ seq: e.seq, street: e.street, street_name: STREETS[e.street], seat: e.seat,
+      bot: h.seats[e.seat].name, kind: e.kind, amount: e.amount, to_total: e.to_total, pot_before: e.pot_before,
+      to_call: e.to_call, stack_before: e.stack_before, all_in: Boolean(e.all_in), corrected: 0 })),
+  };
+}

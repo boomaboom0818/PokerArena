@@ -1,8 +1,11 @@
 import { ScheduleAt } from 'spacetimedb';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import { dealRandom } from './deal-random.ts';
-import { STACK, HOUSE } from './holdem-cards.ts';
-import { deal, act, observation, publicFrame, MATCH_HANDS, type Hand } from './holdem-engine.ts';
+import { STACK, HOUSE, cardStr } from './holdem-cards.ts';
+import { deal, act, observation, publicFrame, replayPayload, pot, board, MATCH_HANDS, type Hand } from './holdem-engine.ts';
+
+// Finished hands kept for replays; older ones are deleted as new hands finish.
+const KEEP_HANDS = 300n;
 
 export function pokerArena(size: 2 | 6) {
   const houses = HOUSE.slice(0, size);
@@ -11,6 +14,12 @@ export function pokerArena(size: 2 | 6) {
   // Hands won live in their own table so adding them did not change `bot` or `standings`. `played`
   // counts hands since tracking began, so older hands do not dilute the win rate.
   const handRecord = table({ name: 'hand_record', public: true }, { name: t.string().primaryKey(), played: t.u32(), won: t.u32() });
+  // One row per finished hand. Summary columns feed the replay list; `data` is the full replay JSON
+  // (see replayPayload). Rows are written only after a hand ends, so revealing hole cards is safe.
+  const handLog = table({ name: 'hand_log', public: true }, {
+    handId: t.u64().primaryKey().autoInc(), tableId: t.u32(), handNo: t.u32(), endedAt: t.f64(),
+    names: t.string(), nets: t.string(), pot: t.u32(), board: t.string(), showdown: t.bool(), data: t.string(),
+  });
   const botOwner = table({ name: 'bot_owner' }, { name: t.string().primaryKey(), owner: t.identity().unique() });
   const online = table({ name: 'online' }, { name: t.string().primaryKey(), connection: t.string().unique() });
   const tableState = table({ name: 'table_state', public: true }, {
@@ -21,7 +30,7 @@ export function pokerArena(size: 2 | 6) {
   const tickTimer = table({ name: 'tick_timer' }, { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt() });
   const active = table({ name: 'active_match' }, { tableId: t.u32().primaryKey(), state: t.string() });
   const turn = table({ name: 'turn' }, { turnId: t.string().primaryKey(), owner: t.identity().unique(), tableId: t.u32().unique(), deadlineMs: t.f64(), observation: t.string() });
-  const db = schema({ bot, handRecord, botOwner, online, tableState, control, tickTimer, active, turn }, { env: { ARENA_ADMIN_ID: t.string(), POKER_DEAL_KEY: t.string() } });
+  const db = schema({ bot, handRecord, handLog, botOwner, online, tableState, control, tickTimer, active, turn }, { env: { ARENA_ADMIN_ID: t.string(), POKER_DEAL_KEY: t.string() } });
   type Ctx = ReducerCtx<InferSchema<typeof db>>;
   type Match = { hand: Hand; nets: number[] };
   const now = (ctx: Ctx) => Number(ctx.timestamp.microsSinceUnixEpoch / 1000n);
@@ -54,6 +63,14 @@ export function pokerArena(size: 2 | 6) {
     }
   }
 
+  function saveReplay(ctx: Ctx, tableId: number, h: Hand) {
+    const replay = replayPayload(h);
+    const row = ctx.db.handLog.insert({ handId: 0n, tableId, handNo: h.no, endedAt: now(ctx),
+      names: h.seats.map(s => s.name).join(','), nets: replay.players.map(p => p.net).join(','), pot: pot(h),
+      board: board(h).map(cardStr).join(' '), showdown: replay.showdown, data: JSON.stringify(replay) });
+    if (row.handId > KEEP_HANDS) ctx.db.handLog.handId.delete(row.handId - KEEP_HANDS);
+  }
+
   // Advance to the next connected player's decision or the end of the current hand.
   function advance(ctx: Ctx, tableId: number, m: Match) {
     const h = m.hand;
@@ -69,6 +86,7 @@ export function pokerArena(size: 2 | 6) {
     if (h.done) {
       h.seats.forEach((s,i) => { m.nets[i] += s.stack-STACK; });
       recordHand(ctx, h);
+      saveReplay(ctx, tableId, h);
       if (h.no === MATCH_HANDS) record(ctx,m);
     }
     const old = ctx.db.tableState.tableId.find(tableId);

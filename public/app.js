@@ -1,4 +1,4 @@
-import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview } from "./stdb.js?v=8";
+import { headsUpDb, leaderboard as stdbBoard, liveTable, pickTable, arenaPreview, recentHands, handReplay } from "./stdb.js?v=9";
 import { startFiggie, stopFiggie } from "./figgie.js?v=9";
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -18,19 +18,10 @@ let sortKey = "chips";
 let sortDir = -1;
 let selectedBot = null;
 let live = { table: 0, cursor: -1, timer: null };
-let replay = { frames: [], index: 0, timer: null, id: null };
 const showHoles = true;
 let overviewTimer = null;
 let overviewBusy = false;
 let sixMaxReady = false;
-
-function api(path, opts) {
-  return fetch(path, opts).then(async (res) => {
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
-  });
-}
 
 function money(n) {
   const v = Number(n) || 0;
@@ -70,13 +61,13 @@ function route() {
     if (!sixMaxReady) {
       sixMaxReady = true;
       bindRankings();
-      loadHands();
+      sixReplay.load();
       refreshLeaderboard();
     }
     startBroadcast();
   } else {
     stopBroadcast();
-    stopReplay();
+    sixReplay.stop();
   }
   if (name === "heads-up") startHeadsUp();
   else stopHeadsUp();
@@ -188,35 +179,30 @@ async function selectBot(name) {
   renderLeaderboard();
   const card = $("#bot-card");
   card.dataset.ready = "";
-  card.innerHTML = `<h2>${esc(name)}</h2><p class="muted">Loading…</p>`;
+  const r = leaderboard.find((b) => b.bot === name);
+  const head = `<h2>${esc(name)}</h2>` + (r
+    ? `<p><b class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</b> chips · ${r.hands.toLocaleString()} hands · ${winRate(r)} won</p>`
+    : "");
+  card.innerHTML = head + `<p class="muted">Loading hands…</p>`;
   try {
-    const d = await api("/api/bots/" + encodeURIComponent(name));
-    const hist = d.history || [];
-    card.innerHTML = `
-      <h2>${esc(d.bot)}</h2>
-      <p><b class="${d.chips >= 0 ? "up" : "down"}">${money(d.chips)}</b> chips · ${Number(d.hands).toLocaleString()} hands</p>
-      ${sparkline(hist.map((h) => h.chips_after))}
-      <h2>Recent matches</h2>
-      ${(d.recent_matches || []).slice(0, 8).map((m) => `
-        <div class="script-line">${esc(m.played_at)} · rank ${Number(m.rank)} ·
-          <span class="${m.net_chips >= 0 ? "up" : "down"}">${money(m.net_chips)}</span>
-        </div>`).join("") || "<p class='muted'>No matches yet.</p>"}
-      <p><a href="#hands" id="see-hands">See this bot's hands</a></p>`;
+    const mine = (await recentHands()).map((h) => ({ h, me: h.players.find((p) => p.bot === name) })).filter((x) => x.me);
+    let run = 0;
+    const curve = mine.slice().reverse().map((x) => (run += x.me.net));
+    card.innerHTML = `${head}
+      ${sparkline(curve)}
+      <h2>Recent hands</h2>
+      ${mine.slice(0, 8).map(({ h, me }) => `
+        <button type="button" class="script-line" data-id="${Number(h.hand_id)}">#${Number(h.hand_id)} · table ${Number(h.table_id) + 1} ·
+          <span class="${me.net >= 0 ? "up" : "down"}">${money(me.net)}</span>
+        </button>`).join("") || "<p class='muted'>No recent hands.</p>"}
+      ${mine.length ? `<p><a href="#hands" id="see-hands">See all of this bot's recent hands</a></p>` : ""}`;
     card.dataset.ready = name;
-    $("#see-hands").addEventListener("click", (ev) => {
-      ev.preventDefault();
-      loadHands(name);
-      $("#hands").scrollIntoView({ behavior: "smooth" });
-    });
+    const jump = () => $("#hands").scrollIntoView({ behavior: "smooth" });
+    $$(".script-line[data-id]", card).forEach((b) => b.addEventListener("click", () => { sixReplay.load(name); jump(); }));
+    const see = $("#see-hands");
+    if (see) see.addEventListener("click", (ev) => { ev.preventDefault(); sixReplay.load(name); jump(); });
   } catch (err) {
-    // Live bots have no archived matches; show their live standing instead of an error.
-    const r = leaderboard.find((b) => b.bot === name);
-    card.innerHTML = r
-      ? `<h2>${esc(name)}</h2>
-        <p><b class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</b> chips · ${r.hands.toLocaleString()} hands · ${winRate(r)} won</p>
-        <p class="muted">No recorded matches yet.</p>`
-      : `<h2>${esc(name)}</h2><p>${esc(err.message)}</p>`;
-    card.dataset.ready = r ? name : "";
+    card.innerHTML = head + `<p class="muted">${esc(err.message)}</p>`;
   }
 }
 
@@ -239,7 +225,11 @@ function sparkline(values) {
 function startBroadcast() {
   if (live.timer) return;
   tune();
-  live.timer = setInterval(tune, 1000);
+  let tick = 0;
+  live.timer = setInterval(() => {
+    tune();
+    if (++tick % 5 === 0) sixReplay.refresh(); // new hands appear in the replay list within a few seconds
+  }, 1000);
 }
 
 let headsUp = { timer: null, stamp: "" };
@@ -248,11 +238,17 @@ function startHeadsUp() {
   if (headsUp.timer) return;
   tuneHeadsUp();
   loadHeadsUpBoard();
-  headsUp.timer = setInterval(() => { tuneHeadsUp(); loadHeadsUpBoard(); }, 1000);
+  huReplay.load();
+  let tick = 0;
+  headsUp.timer = setInterval(() => {
+    tuneHeadsUp(); loadHeadsUpBoard();
+    if (++tick % 5 === 0) huReplay.refresh(); // new hands appear in the replay list within a few seconds
+  }, 1000);
 }
 function stopHeadsUp() {
   clearInterval(headsUp.timer);
   headsUp.timer = null;
+  huReplay.stop();
 }
 async function tuneHeadsUp() {
   try {
@@ -415,37 +411,6 @@ function renderFelt(root, frame) {
   root.insertBefore(pot, board.nextSibling);
 }
 
-async function loadHands(bot) {
-  const list = $("#hand-list");
-  list.dataset.loaded = "1";
-  list.innerHTML = "<p class='muted'>Loading hands…</p>";
-  try {
-    const q = bot ? "?bot=" + encodeURIComponent(bot) + "&limit=40" : "?limit=40";
-    const data = await api("/api/hands" + q);
-    if (!data.hands.length) {
-      list.innerHTML = "<p class='muted'>No recorded hands yet.</p>";
-      return;
-    }
-    list.innerHTML = data.hands.map((h) => `
-      <button type="button" class="hand-row" data-id="${Number(h.hand_id)}">
-        <strong>#${Number(h.hand_id)}</strong> match ${Number(h.match_id)}
-        · pot ${Number(h.pot).toLocaleString()} ${h.showdown ? "· showdown" : ""}
-        <div class="muted">${h.players.map((p) => esc(p.bot)).join(" · ")}</div>
-      </button>`).join("");
-    $$(".hand-row", list).forEach((b) => b.addEventListener("click", () => openHand(b.dataset.id)));
-    openHand(data.hands[0].hand_id);
-  } catch (err) {
-    list.textContent = err.message;
-  }
-}
-
-function stopReplay() {
-  clearInterval(replay.timer);
-  replay.timer = null;
-  const play = $("#replay-play");
-  if (play) play.classList.remove("on");
-}
-
 function handFrames(data) {
   const players = data.players.slice().sort((a, b) => a.seat - b.seat);
   const seats = players.map((p) => ({
@@ -514,87 +479,126 @@ function handFrames(data) {
   return frames;
 }
 
-function showReplay(index) {
-  if (!replay.frames.length) return;
-  replay.index = Math.max(0, Math.min(index, replay.frames.length - 1));
-  const frame = replay.frames[replay.index];
-  renderFelt($("#replay-felt"), frame);
-  $("#replay-log").textContent = describe(frame);
-  const scrub = $("#replay-scrub");
-  scrub.max = String(replay.frames.length - 1);
-  scrub.value = String(replay.index);
-  $$("#replay-script .script-line").forEach((line) => {
-    line.classList.toggle("on", Number(line.dataset.step) === replay.index);
-  });
-}
+// Replay panel for one live arena. Element ids are "<prefix>hand-list", "<prefix>replay-play", etc.
+function createReplay(prefix, db, autoplay) {
+  const el = (id) => $("#" + prefix + id);
+  const state = { frames: [], index: 0, timer: null, id: null, bot: null, stamp: "" };
 
-function playReplay() {
-  if (replay.timer) {
-    stopReplay();
-    return;
+  function setPlayLabel() { el("replay-play").textContent = state.timer ? "Pause" : "Play"; }
+
+  function stop() {
+    clearInterval(state.timer);
+    state.timer = null;
+    el("replay-play").classList.remove("on");
+    setPlayLabel();
   }
-  if (replay.index >= replay.frames.length - 1) replay.index = 0;
-  $("#replay-play").classList.add("on");
-  $("#replay-play").textContent = "Pause";
-  replay.timer = setInterval(() => {
-    if (replay.index >= replay.frames.length - 1) {
-      stopReplay();
-      $("#replay-play").textContent = "Play";
-      return;
-    }
-    showReplay(replay.index + 1);
-  }, 700);
-}
 
-function bindReplay() {
-  const play = $("#replay-play");
-  if (play.dataset.bound) return;
-  play.dataset.bound = "1";
-  play.addEventListener("click", () => {
-    playReplay();
-    if (!replay.timer) play.textContent = "Play";
-  });
-  $("#replay-prev").addEventListener("click", () => { stopReplay(); $("#replay-play").textContent = "Play"; showReplay(replay.index - 1); });
-  $("#replay-next").addEventListener("click", () => { stopReplay(); $("#replay-play").textContent = "Play"; showReplay(replay.index + 1); });
-  $("#replay-scrub").addEventListener("input", (ev) => {
-    stopReplay();
-    $("#replay-play").textContent = "Play";
-    showReplay(Number(ev.target.value));
-  });
-}
-
-async function openHand(id) {
-  bindReplay();
-  stopReplay();
-  const data = await api("/api/hands/" + id);
-  replay.frames = handFrames(data);
-  replay.index = 0;
-  replay.id = id;
-  const script = $("#replay-script");
-  let street = -1;
-  const lines = [`<h2>Hand #${Number(data.hand_id)}</h2>`];
-  data.actions.forEach((a, i) => {
-    if (a.street !== street) {
-      street = a.street;
-      const shown = data.board.slice(0, [0, 3, 4, 5][a.street]).join(" ");
-      lines.push(`<div class="street">${esc(a.street_name.toUpperCase())} ${esc(shown)}</div>`);
-    }
-    const amt = a.kind === "raise" || a.kind === "bet" ? " " + a.to_total : (a.amount ? " " + a.amount : "");
-    lines.push(`<button type="button" class="script-line" data-step="${i + 1}">${esc(a.bot)} ${esc(a.kind)}${esc(amt)}${a.all_in ? " (all-in)" : ""}</button>`);
-  });
-  lines.push(`<button type="button" class="script-line" data-step="${replay.frames.length - 1}">Showdown</button>`);
-  script.innerHTML = lines.join("");
-  $$(".script-line", script).forEach((line) => {
-    line.addEventListener("click", () => {
-      stopReplay();
-      $("#replay-play").textContent = "Play";
-      showReplay(Number(line.dataset.step));
+  function show(index) {
+    if (!state.frames.length) return;
+    state.index = Math.max(0, Math.min(index, state.frames.length - 1));
+    const frame = state.frames[state.index];
+    renderFelt(el("replay-felt"), frame);
+    el("replay-log").textContent = describe(frame);
+    const scrub = el("replay-scrub");
+    scrub.max = String(state.frames.length - 1);
+    scrub.value = String(state.index);
+    $$(".script-line", el("replay-script")).forEach((line) => {
+      line.classList.toggle("on", Number(line.dataset.step) === state.index);
     });
-  });
-  $("#replay-play").textContent = "Play";
-  showReplay(0);
-  if (!$("#six-max").hidden) playReplay();
+  }
+
+  function play() {
+    if (state.timer) return stop();
+    if (state.index >= state.frames.length - 1) state.index = 0;
+    el("replay-play").classList.add("on");
+    state.timer = setInterval(() => {
+      if (state.index >= state.frames.length - 1) return stop();
+      show(state.index + 1);
+    }, 700);
+    setPlayLabel();
+  }
+
+  function bind() {
+    const button = el("replay-play");
+    if (button.dataset.bound) return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", play);
+    el("replay-prev").addEventListener("click", () => { stop(); show(state.index - 1); });
+    el("replay-next").addEventListener("click", () => { stop(); show(state.index + 1); });
+    el("replay-scrub").addEventListener("input", (ev) => { stop(); show(Number(ev.target.value)); });
+  }
+
+  async function open(id, start) {
+    bind();
+    stop();
+    const data = await handReplay(id, db);
+    state.frames = handFrames(data);
+    state.index = 0;
+    state.id = id;
+    let street = -1;
+    const lines = [`<h2>Hand #${Number(data.hand_id)}</h2>`];
+    data.actions.forEach((a, i) => {
+      if (a.street !== street) {
+        street = a.street;
+        const shown = data.board.slice(0, [0, 3, 4, 5][a.street]).join(" ");
+        lines.push(`<div class="street">${esc(a.street_name.toUpperCase())} ${esc(shown)}</div>`);
+      }
+      const amt = a.kind === "raise" || a.kind === "bet" ? " " + a.to_total : (a.amount ? " " + a.amount : "");
+      lines.push(`<button type="button" class="script-line" data-step="${i + 1}">${esc(a.bot)} ${esc(a.kind)}${esc(amt)}${a.all_in ? " (all-in)" : ""}</button>`);
+    });
+    lines.push(`<button type="button" class="script-line" data-step="${state.frames.length - 1}">${data.showdown ? "Showdown" : "Result"}</button>`);
+    const script = el("replay-script");
+    script.innerHTML = lines.join("");
+    $$(".script-line", script).forEach((line) => {
+      line.addEventListener("click", () => { stop(); show(Number(line.dataset.step)); });
+    });
+    $$(".hand-row", el("hand-list")).forEach((b) => b.classList.toggle("on", b.dataset.id === String(id)));
+    show(0);
+    if (start && autoplay()) play();
+  }
+
+  // Load the list of recent hands (optionally one bot's). `pick` opens and plays the newest hand;
+  // background refreshes leave the open replay alone (unless none is open yet).
+  async function load(bot = state.bot, pick = true) {
+    state.bot = bot;
+    const list = el("hand-list");
+    if (!list.children.length || list.dataset.bot !== String(bot || "")) list.innerHTML = "<p class='muted'>Loading hands…</p>";
+    list.dataset.bot = String(bot || "");
+    try {
+      const hands = (await recentHands(db)).filter((h) => !bot || h.players.some((p) => p.bot === bot)).slice(0, 40);
+      const stamp = JSON.stringify([bot, hands.map((h) => h.hand_id)]);
+      const same = stamp === state.stamp && list.querySelector(".hand-row");
+      state.stamp = stamp;
+      if (same) {
+        if (pick && hands.length) open(hands[0].hand_id, true);
+        return;
+      }
+      if (!hands.length) {
+        list.innerHTML = `<p class='muted'>${bot ? `No recent hands for ${esc(bot)}.` : "No hands played yet. Replays appear here as soon as a hand finishes."}</p>`;
+        return;
+      }
+      list.innerHTML = (bot ? `<p class="muted">Showing ${esc(bot)} · <a href="#" class="show-all">show all</a></p>` : "") + hands.map((h) => {
+        const winners = h.players.filter((p) => p.net > 0).map((p) => `${esc(p.bot)} ${money(p.net)}`).join(", ");
+        return `<button type="button" class="hand-row${String(h.hand_id) === String(state.id) ? " on" : ""}" data-id="${Number(h.hand_id)}">
+          <strong>#${Number(h.hand_id)}</strong> table ${Number(h.table_id) + 1} · hand ${Number(h.hand_no)}
+          · pot ${Number(h.pot).toLocaleString()}${h.showdown ? " · showdown" : ""}
+          <div class="muted">${winners || h.players.map((p) => esc(p.bot)).join(" · ")}</div>
+        </button>`;
+      }).join("");
+      $$(".hand-row", list).forEach((b) => b.addEventListener("click", () => open(b.dataset.id, true)));
+      const all = $(".show-all", list);
+      if (all) all.addEventListener("click", (ev) => { ev.preventDefault(); load(null); });
+      if (pick || state.id == null) open(hands[0].hand_id, pick);
+    } catch (err) {
+      list.textContent = err.message;
+    }
+  }
+
+  return { load, refresh: () => load(state.bot, false), stop };
 }
+
+const sixReplay = createReplay("", undefined, () => !$("#six-max").hidden);
+const huReplay = createReplay("hu-", headsUpDb, () => !$("#heads-up").hidden);
 
 function bindConnect() {
   const root = $("#connect");

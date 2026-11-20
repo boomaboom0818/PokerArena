@@ -33,3 +33,19 @@ test('remote turn sequences finish legally and conserve chips in both arenas', (
     assert.equal(h.seats.reduce((v,s)=>v+s.stack,0),n*10000);
   }
 });
+
+test('replay payload matches the finished hand and hides nothing it should not', async () => {
+  const { replayPayload } = await import('../arena-shared/holdem-engine.ts');
+  const h = deal(['alice','bob','carol'],1,deck);
+  assert.throws(() => replayPayload(h));
+  act(h,'fold'); act(h,'call'); act(h,'check');
+  while (!h.done) act(h, observation(h).to_call ? 'call' : 'check');
+  const r = replayPayload(h);
+  assert.equal(r.actions.length, h.history.length);
+  assert.deepEqual(r.actions.slice(0,3).map(a => a.kind), ['sb','bb','fold']);
+  assert.equal(r.board.length, 5);
+  assert.equal(r.players.reduce((n,p) => n + p.net, 0), 0);
+  assert.equal(r.players[r.actions[2].seat].folded_street, 0);
+  assert.ok(r.showdown && r.players.filter(p => p.showdown).every(p => typeof p.category === 'string'));
+  assert.ok(r.players.every(p => p.hole.length === 2 && !p.hole.includes('??')));
+});

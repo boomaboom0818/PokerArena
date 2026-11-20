@@ -142,7 +142,7 @@
       </div>
       <aside class="panel" id="bot-card">
         <h2>Pick a bot</h2>
-        <p class="muted">Click a row to see its chip history and recent matches.</p>
+        <p class="muted">Click a row to see its chip history and recent hands.</p>
       </aside>
     </div>
     <div id="hands">
@@ -201,6 +201,25 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+    </div>
+    <div class="rankings-block" id="hu-hands">
+      <div class="hero"><div><h2>Replay a hand</h2></div></div>
+      <div class="split hands-split">
+        <div class="panel list" id="hu-hand-list"><p class="muted">Loading hands…</p></div>
+        <div>
+          <p class="logline" id="hu-replay-log">Pick a hand to watch it play out.</p>
+          <div class="replay-bar">
+            <button type="button" id="hu-replay-play">Play</button>
+            <button type="button" id="hu-replay-prev" aria-label="Previous action">Back</button>
+            <button type="button" id="hu-replay-next" aria-label="Next action">Next</button>
+            <input id="hu-replay-scrub" type="range" min="0" max="0" value="0" aria-label="Hand progress">
+          </div>
+          <div class="felt-wrap small">
+            <div class="felt" id="hu-replay-felt"></div>
+          </div>
+          <div class="panel" id="hu-replay-script"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -432,6 +451,6 @@ ws.onmessage = (e) => {
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=40"></script>
+<script type="module" src="/app.js?v=41"></script>
 </body>
 </html>

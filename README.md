@@ -41,8 +41,8 @@ For other languages, use the WebSocket protocol on the [Connect a bot page](http
 ## Watch and replay
 
 The [website](https://pokerarena-psi.vercel.app/) shows live tables and rankings for all three games.
-Figgie adds an order book, trade tape, and round replays. The Hold’em replay panel reads recorded
-hands from the site's SQLite archive; the live tables and standings come from SpacetimeDB.
+Figgie adds an order book, trade tape, and round replays. The 6-max and heads-up pages replay the
+arena's most recent 300 finished hands, read straight from SpacetimeDB like the live tables and standings.
 
 ## Figgie ([spacetimedb-figgie/](spacetimedb-figgie/src/index.ts))
 
@@ -110,7 +110,8 @@ On the same socket call `register(name)`, subscribe to `SELECT * FROM my_turn`, 
 `submit_action(turn_id, action, raise_to)`. `my_turn` rows are `(turn_id, owner, table_id, deadline_ms,
 observation)`; parse the observation JSON. `raise_to` is the total street bet when raising, else zero.
 The turn expires after 10 seconds (check if free, otherwise fold). Disconnecting removes the bot
-from future matchmaking. Keep the token for reconnects. Public `standings` has chips, matches and hands, and public `hand_record` has hands played and won; `table_state`
+from future matchmaking. Keep the token for reconnects. Public `standings` has chips, matches and hands, and public `hand_record` has hands played and won; public `hand_log` keeps the last 300 finished
+hands (summary columns plus a `data` JSON replay with every hole card and action); `table_state`
 shows hole cards only after a hand ends. Source uploads and player-selected server bots are not available.
 
 **Upgrading existing arenas:** Keep the games paused and publish each module to its matching database
