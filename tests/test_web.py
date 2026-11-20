@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.request import urlopen
 
 from pokerarena.arena import Arena, ArenaConfig
@@ -13,6 +14,7 @@ from pokerarena.starter import starter_source
 from pokerarena.http_api import (
     BROADCAST_EPOCH,
     BROADCAST_STEP_S,
+    auth_config,
     broadcast_frame,
     hand_payload,
     leaderboard_payload,
@@ -21,6 +23,17 @@ from pokerarena.http_api import (
     seat_tables,
 )
 from pokerarena.storage import Store
+
+
+class AuthConfigTests(unittest.TestCase):
+    def test_returns_public_client_id_without_copy_paste_formatting(self):
+        for setting in ("client_example", " `client_example`\n"):
+            with self.subTest(setting=setting), patch.dict(os.environ, ARENA_AUTH_CLIENT_ID=setting):
+                self.assertEqual(auth_config(), {"client_id": "client_example"})
+
+    def test_sign_in_stays_unconfigured_without_a_client_id(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(auth_config(), {"client_id": ""})
 
 
 class LiveFrameTests(unittest.TestCase):

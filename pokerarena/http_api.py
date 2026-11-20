@@ -194,7 +194,11 @@ def hand_payload(store: Store, hand_id: int) -> dict | None:
 
 
 def auth_config():
-    return {"client_id": os.environ.get("ARENA_AUTH_CLIENT_ID", "")}
+    client_id = os.environ.get("ARENA_AUTH_CLIENT_ID", "").strip()
+    # Ignore Markdown delimiters if the public ID was copied from setup instructions.
+    if len(client_id) >= 2 and client_id.startswith("`") and client_id.endswith("`"):
+        client_id = client_id[1:-1].strip()
+    return {"client_id": client_id}
 
 
 CONNECT_GUIDE = {
