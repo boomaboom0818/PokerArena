@@ -10,13 +10,13 @@
   "headers": [{
     "source": "/(.*)",
     "headers": [
-      { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://maincloud.spacetimedb.com wss://maincloud.spacetimedb.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" },
+      { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://auth.spacetimedb.com https://maincloud.spacetimedb.com wss://maincloud.spacetimedb.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" },
       { "key": "Referrer-Policy", "value": "no-referrer" },
       { "key": "X-Content-Type-Options", "value": "nosniff" }
     ]
   }],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index?path=$1" },
-    { "source": "/((?!api/|styles.css|app.js|stdb.js|figgie.js|favicon.ico).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|vendor/|account.js|styles.css|app.js|stdb.js|figgie.js|favicon.ico).*)", "destination": "/index.html" }
   ]
 }

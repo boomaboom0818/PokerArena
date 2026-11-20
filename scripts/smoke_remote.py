@@ -1,6 +1,7 @@
 """Exercise built modules on disposable loopback SpacetimeDB, optionally over old bundles."""
 import argparse
 from contextlib import ExitStack
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -44,7 +45,7 @@ def main(legacy):
             def publish(base, module, db):
                 subprocess.run(['spacetime', '--config-path', str(cfg), 'publish', '--server', host, '--js-path', str(base/module/'dist/bundle.js'),
                                 '--no-config', '--delete-data=never', '--break-clients', '--yes=migrate,skip-login', db], check=True, cwd=tmp, stdout=subprocess.DEVNULL,
-                               env={**os.environ, 'ARENA_ADMIN_ID': admin['identity'], 'FIGGIE_DEAL_KEY': os.urandom(32).hex(), 'POKER_DEAL_KEY': os.urandom(32).hex()})
+                                env={**os.environ, 'ARENA_ADMIN_ID': admin['identity'], 'ARENA_AUTH_CLIENT_ID': 'local-smoke', 'FIGGIE_DEAL_KEY': os.urandom(32).hex(), 'POKER_DEAL_KEY': os.urandom(32).hex()})
             def denied(fn):
                 try: fn()
                 except HTTPError: return
@@ -53,6 +54,14 @@ def main(legacy):
                 route = '/v1/database/'+db
                 def rows(query, auth=token): return json.loads(post(route+'/sql',query.encode(),auth))[0]['rows']
                 def call(name,args,auth=token): return post(route+'/call/'+name,json.dumps(args).encode(),auth)
+                # The disposable database owner seeds grants in place of the hosted login service.
+                def grant(name, account=None, ttl=600):
+                    account = account or json.loads(post('/v1/identity'))['identity']
+                    code = os.urandom(16).hex()
+                    digest = hashlib.sha256(code.encode()).hexdigest()
+                    stmt = f"INSERT INTO deploy_grant (account,digest,name,email,expires_ms) VALUES (0x{account},'{digest}','{name}','test@example.invalid',{(time.time()+ttl)*1000:.1f})"
+                    post(route+'/sql',stmt.encode(),token)
+                    return code, account
                 if legacy:
                     publish(legacy,module,db); call('set_paused',[True]); before = rows('SELECT * FROM control')
                 publish(ROOT,module,db)
@@ -60,19 +69,46 @@ def main(legacy):
                 else: call('set_paused',[True])
                 other = json.loads(post('/v1/identity'))['token']
                 denied(lambda: call('set_paused',[False],other))
+                denied(lambda: call('register',['unlinked'],other))
+                denied(lambda: call('issue_deploy_code',['unlinked','ab'*32],other))
+                denied(lambda: rows('SELECT * FROM bot_account',other))
+                denied(lambda: rows('SELECT * FROM deploy_grant',other))
+                expired, account = grant('expired', ttl=-60)
+                denied(lambda: call('deploy_bot',['expired',expired],other))
+                denied(lambda: call('set_account_banned',[account,True],other))
+                call('set_account_banned',[account,True]); call('set_account_banned',[account,False])
+                # Recovery keeps attribution and revokes the previous machine's token.
+                first = json.loads(post('/v1/identity'))['token']
+                replacement = json.loads(post('/v1/identity'))['token']
+                code, account = grant('owner_check')
+                denied(lambda: call('deploy_bot',['wrong_name',code],first))
+                call('deploy_bot',['owner_check',code],first)
+                conflict, _ = grant('owner_check')
+                denied(lambda: call('deploy_bot',['owner_check',conflict],replacement))
+                call('deploy_bot',['owner_check',grant('owner_check',account)[0]],replacement)
+                assert rows("SELECT email FROM bot_account WHERE name = 'owner_check'") == [['test@example.invalid']]
+                denied(lambda: call('register',['owner_check'],first))
+                call('set_account_banned',[account,True]); denied(lambda: call('register',['owner_check'],replacement))
                 if db == 'figgie-arena':
                     denied(lambda: call('host_bot',['example','maker'],other))
                     denied(lambda: rows('SELECT * FROM hand',other))
                     figgie_tokens = [other] + [json.loads(post('/v1/identity'))['token'] for _ in range(8)]
-                    for i, auth in enumerate(figgie_tokens[:3]):
-                        call('register',[f'figgie{i}'],auth); call('ready',[],auth)
+                    def deploy_figgie(i, auth):
+                        name = f'figgie{i}'
+                        code, account = grant(name)
+                        call('deploy_bot',[name,code],auth)
+                        denied(lambda: call('deploy_bot',[name,code],auth))
+                        call('set_account_banned',[account,True]); denied(lambda: call('ready',[],auth))
+                        denied(lambda: call('register',[name],auth)); call('set_account_banned',[account,False])
+                        call('register',[name],auth); call('ready',[],auth)
+                    for i, auth in enumerate(figgie_tokens[:3]): deploy_figgie(i, auth)
                     call('set_paused',[False]); time.sleep(1.2)
                     # An old deployment may still have a round ending; a fresh one must be idle.
                     if not legacy:
                         assert not rows('SELECT * FROM seat')
                         call('set_paused',[True])
-                        for i, auth in enumerate(figgie_tokens):
-                            call('register',[f'figgie{i}'],auth); call('ready',[],auth)
+                        for i, auth in enumerate(figgie_tokens[3:], 3): deploy_figgie(i, auth)
+                        for auth in figgie_tokens: call('ready',[],auth)
                         call('set_paused',[False])
                         deadline = time.monotonic()+5
                         while len(seats := rows('SELECT table_id, kind, cash, cards FROM seat')) < 9:
@@ -94,7 +130,8 @@ def main(legacy):
                         ws.sock.settimeout(15)
                         owner = json.loads(ws.recv())['IdentityToken']['token']
                         name = f'socket_test_{i}'
-                        ws.send(json.dumps({'CallReducer':{'reducer':'register','args':json.dumps([name]),'request_id':1,'flags':0}}))
+                        code, _ = grant(name)
+                        ws.send(json.dumps({'CallReducer':{'reducer':'deploy_bot','args':json.dumps([name,code]),'request_id':1,'flags':0}}))
                         ws.send(json.dumps({'Subscribe':{'query_strings':['SELECT * FROM my_turn'],'request_id':2}}))
                         while 'InitialSubscription' not in json.loads(ws.recv()): pass
                         sockets[owner] = (ws, name)
@@ -127,8 +164,9 @@ def main(legacy):
                 for i in range(size):
                     proc=subprocess.Popen([sys.executable,'-m','pokerarena','connect','bots_user/example_bot.py','--game',
                                            'heads-up' if module.endswith('-hu') else '6-max','--name',f'cli_test_{i}','--host',host.replace('http:','ws:')],
-                                          cwd=ROOT,env={**os.environ,'POKERARENA_HOME':tmp},stdout=subprocess.DEVNULL)
+                                           cwd=ROOT,env={**os.environ,'POKERARENA_HOME':tmp},stdout=subprocess.DEVNULL, stdin=subprocess.PIPE, text=True)
                     controls.append(proc)
+                    proc.stdin.write(grant(f'cli_test_{i}')[0]+'\n'); proc.stdin.close()
                 deadline = time.monotonic()+45
                 while time.monotonic()<deadline:
                     matches = rows("SELECT matches FROM standings WHERE name = 'cli_test_0'",other)

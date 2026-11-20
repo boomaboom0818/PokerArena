@@ -6,7 +6,7 @@ import time
 
 from .bots import spec_from_string
 from .engine import _coerce
-from .figgie import HOST, PROTOCOL, WebSocket, clean_name, save_token, token_path
+from .figgie import HOST, PROTOCOL, WebSocket, clean_name, deployment_code, save_token, token_path
 from .models import ActionEvent, Observation, PlayerView
 
 
@@ -19,7 +19,7 @@ def observation(raw):
     return Observation(**data)
 
 
-def play_session(ws, bot, name, path):
+def play_session(ws, bot, name, path, host, db):
     rid, last = 0, None
 
     def call(reducer, args):
@@ -40,10 +40,13 @@ def play_session(ws, bot, name, path):
         status = tx.get('status', {})
         reducer = tx.get('reducer_call', {}).get('reducer_name', '')
         if 'Failed' in status:
-            if reducer == 'register' or tx.get('reducer_call', {}).get('request_id') == 1:
+            if reducer == 'register' and 'LINK_REQUIRED:' in status['Failed']:
+                call('deploy_bot', [name, deployment_code(name, host, db)])
+                continue
+            if reducer in ('register', 'deploy_bot') or tx.get('reducer_call', {}).get('request_id') == 1:
                 raise SystemExit(f"registration refused: {status['Failed']}")
             print(f"turn refused: {status['Failed']}", file=sys.stderr)
-        if 'InitialSubscription' in msg:
+        if 'Committed' in status and reducer in ('register', 'deploy_bot'):
             print(f'{name}: connected; waiting for a turn', flush=True)
         update = (msg.get('InitialSubscription', {}).get('database_update') or
                   msg.get('TransactionUpdateLight', {}).get('update') or status.get('Committed') or {})
@@ -86,7 +89,7 @@ def run(args):
             ws = WebSocket(f'{host}/v1/database/{db}/subscribe', PROTOCOL, path.read_text().strip() if path.exists() else None)
             try:
                 delay = 1
-                play_session(ws, bot, name, path)
+                play_session(ws, bot, name, path, host, db)
             finally:
                 ws.close()
         except OSError as e:

@@ -16,6 +16,11 @@ git clone https://github.com/boomaboom0818/PokerArena.git
 cd PokerArena
 ```
 
+You can watch games and run local tournaments without an account. For live play, sign in on the
+[Account page](https://pokerarena-psi.vercel.app/#account), select your game and bot name, and get
+a one-time deployment code. Paste it at the connector’s first prompt. The code expires in ten minutes;
+after linking, the bot uses its saved identity for unattended reconnects. Each account gets one bot name per game.
+
 **Hold’em:** Create a starter, edit `act(obs)`, and choose a game. Replace `my_bot.py` with a unique filename to get a different default bot name, or pass `--name` when connecting.
 
 ```sh
@@ -78,13 +83,13 @@ class MyBot(FiggieBot):
 
 Any other language: open `wss://maincloud.spacetimedb.com/v1/database/figgie-arena/subscribe`
 with subprotocol `v1.json.spacetimedb`, subscribe to `my_hand`, `seat`, `quote`, `trade` and
-`figgie_table`, call `register(name)`, then `bid(suit, price)`, `ask(suit, price)`,
+`figgie_table`, call `deploy_bot(name, code)` on first entry (`register(name)` on reconnect), then `bid(suit, price)`, `ask(suit, price)`,
 `buy(suit)`, `sell(suit)`, `cancel(suit, side)`. Keep the token from the first message and send
 it back in an `Authorization: Bearer` handshake header over WSS to keep your name. The first snapshot sends rows
 as JSON objects; later `TransactionUpdateLight` messages send them as arrays in column order
 (see the Connect tab or [figgie.py](pokerarena/figgie.py) `COLUMNS`). All participant strategies run
 on the bot's machine. An older Figgie bot's
-owner can use the same identity to register its name as a remote bot between rounds.
+owner can link the same identity to a signed-in account between rounds to keep its name and results.
 The Python client stores owner-only token files separately for each server, database and bot. For a
 pre-upgrade token, the client prints the destination for manual migration after verifying its origin.
 
@@ -106,13 +111,53 @@ timing information cannot reveal cards. Publish or update the module with
 Each has its own scheduled tick. For poker, the Python `connect` command loads your local `Bot`
 class and calls `act(Observation)` for each turn. For a custom client, connect to
 `wss://maincloud.spacetimedb.com/v1/database/<database>/subscribe` with `v1.json.spacetimedb`.
-On the same socket call `register(name)`, subscribe to `SELECT * FROM my_turn`, and answer with
+On the same socket call `deploy_bot(name, code)` once, then `register(name)` on reconnects.
+Subscribe to `SELECT * FROM my_turn`, and answer with
 `submit_action(turn_id, action, raise_to)`. `my_turn` rows are `(turn_id, owner, table_id, deadline_ms,
 observation)`; parse the observation JSON. `raise_to` is the total street bet when raising, else zero.
 The turn expires after 10 seconds (check if free, otherwise fold). Disconnecting removes the bot
 from future matchmaking. Keep the token for reconnects. Public `standings` has chips, matches and hands, and public `hand_record` has hands played and won; public `hand_log` keeps the last 300 finished
 hands (summary columns plus a `data` JSON replay with every hole card and action); `table_state`
 shows hole cards only after a hand ends. Source uploads and player-selected server bots are not available.
+
+### Enable player login
+
+1. Create one [SpacetimeAuth project and web client](https://spacetimedb.com/docs/core-concepts/authentication/spacetimeauth/configuring-a-project/)
+   for all three games. Enable a sign-in method that supplies a verified email. Add
+   `https://YOUR-SITE/auth/callback` as a redirect URI and `https://YOUR-SITE/` as a post-logout URI.
+   For local website development add the corresponding `http://127.0.0.1:8787` URIs to a development client.
+2. Set `ARENA_AUTH_CLIENT_ID` to the **public client ID** in the Vercel environment (or the environment
+   of `pokerarena serve`) and in the publishing environment for **each game module**. No client secret,
+   password database, or mail service is required on the site. The site uses the authorization-code flow
+   with PKCE, via the self-hosted `oidc-client-ts` 3.5.0 browser library in `public/vendor/`.
+3. Pause the games, publish all three modules as described below, then deploy the website. Try signing in,
+   linking a test bot, and reconnecting it before resuming play. The login page alone does not gate old servers.
+
+**Existing bots:** run the updated client with the same name and saved bot token, and link it once.
+An unlinked legacy name cannot be claimed with a different token. Once linked, its account can get a
+fresh code for the same name to replace a lost token or move machines without losing standings. Stop
+the old bot first and let the current match or trading round finish. Logging out of the website does
+not stop an already-linked bot. Bot names remain reserved to their account if the bot is removed.
+
+**Organizer lookup and bans:** the database owner can look up a leaderboard name in the private
+`bot_account` table. `account` identifies the player across games; `email` is the verified prize contact.
+For example, as the database owner:
+
+```sh
+spacetime sql --server maincloud poker-arena "SELECT name, account, email FROM bot_account WHERE name = 'my_bot'"
+```
+
+To ban that account across the competition, run this as the designated admin of each game. Use the
+64 hex digits from `account` (without `0x`), **not** the bot's runtime identity. A ban can be set
+even in a game the player hasn't entered. The calls are independent and safe to retry; check all three
+succeed. Set `true` to `false` to lift the ban. Ownership and results are retained.
+
+```sh
+ACCOUNT=...  # account identity from the lookup
+for db in poker-arena poker-heads-up figgie-arena; do
+  spacetime call --server maincloud "$db" set_account_banned "$ACCOUNT" true || echo "Retry $db" >&2
+done
+```
 
 **Upgrading existing arenas:** Keep the games paused and publish each module to its matching database
 from the repository checkout before deploying the matching frontend. For both poker publishes set
@@ -123,8 +168,8 @@ for each poker database, like `FIGGIE_DEAL_KEY`). Later publishes preserve store
 Run `npm ci` in each module before building to refresh the local `@pokerarena/shared` package.
 Figgie retains the admin recorded at initialization. Use `--delete-data=never`;
 the poker visibility change intentionally breaks direct `bot` subscriptions, which must switch to
-`standings`. Existing poker rows keep their chip totals and names but have no provable owner and are
-not seated; register a new name, or ask the admin to remove the old row before re-registration.
+`standings`. Very old poker rows without a `bot_owner` record keep their chip totals and names but have
+no provable owner and are not seated; pick a new name or ask the admin about the old row.
 Previously public bot source cannot be made retroactively private. Rotate any secret it contained.
 Check the public standings and owner controls before the admin resumes games with `set_paused`.
 

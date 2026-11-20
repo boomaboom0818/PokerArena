@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 from pokerarena.bots import BUILTIN  # noqa: E402
 from pokerarena.http_api import (  # noqa: E402
     CONNECT_GUIDE,
+    auth_config,
     bot_detail,
     hand_payload,
     leaderboard_payload,
@@ -60,6 +61,8 @@ def dispatch(method: str, path: str, qs: dict, body: dict):
         path = "/api" + (path if path.startswith("/") else "/" + path)
     path = path.rstrip("/") or "/api"
     parts = [p for p in path.split("/") if p]
+    if path == "/api/auth/config":
+        return 200, auth_config()
     db = store()
 
     if path in ("/api", "/api/health"):

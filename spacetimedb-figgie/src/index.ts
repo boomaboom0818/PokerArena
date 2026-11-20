@@ -18,6 +18,7 @@ import { ScheduleAt } from 'spacetimedb';
 import { Identity } from 'spacetimedb';
 import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import { dealRandom } from '@pokerarena/shared/shuffle';
+import { accountTables, accountEnv, issueCode, redeemCode, eligibleAccount, requireLinked, setBan } from '@pokerarena/shared/accounts';
 import { DECK_SIZE, POT, START_CASH, dealHands, tableSizes } from './seating';
 
 const SUITS = ['spades', 'clubs', 'hearts', 'diamonds'] as const;
@@ -162,8 +163,8 @@ const tickTimer = table({ name: 'tick_timer' }, {
 });
 
 const spacetimedb = schema({
-  player, figgieTable, seat, hand, quote, trade, roundResult, dealer, hosted, readyLease, control, tickTimer,
-}, { env: { FIGGIE_DEAL_KEY: t.string() } });
+  ...accountTables, player, figgieTable, seat, hand, quote, trade, roundResult, dealer, hosted, readyLease, control, tickTimer,
+}, { env: { ...accountEnv, FIGGIE_DEAL_KEY: t.string() } });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
@@ -207,7 +208,7 @@ function control0(ctx: Ctx) {
 function eligibleUsers(ctx: Ctx, now: number): string[] {
   const out: string[] = [];
   for (const p of ctx.db.player.iter()) {
-    if (p.kind === 'remote' && (p.online || (ctx.db.readyLease.name.find(p.name)?.until ?? 0) > now)) out.push(p.name);
+    if (p.kind === 'remote' && eligibleAccount(ctx, p.name) && (p.online || (ctx.db.readyLease.name.find(p.name)?.until ?? 0) > now)) out.push(p.name);
   }
   return out;
 }
@@ -655,6 +656,7 @@ export const init = spacetimedb.init(ctx => {
 function touch(ctx: Ctx, online?: boolean): void {
   for (const p of ctx.db.player.owner.filter(ctx.sender)) {
     if (p.kind !== 'remote') continue;
+    if (online && !eligibleAccount(ctx, p.name)) continue;
     ctx.db.player.name.update({ ...p, lastSeen: online === false ? 0 : nowMs(ctx), online: online ?? p.online });
   }
 }
@@ -677,8 +679,9 @@ function checkRegistration(ctx: Ctx): void {
 }
 
 /** Claim a bot name for this connection's identity. Seated at the next deal. */
-export const register = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+function registerBot(ctx: Ctx, name: string) {
   const safe = cleanName(name);
+  requireLinked(ctx, safe);
   const now = nowMs(ctx);
   const existing = ctx.db.player.name.find(safe);
   if (existing) {
@@ -695,6 +698,27 @@ export const register = spacetimedb.reducer({ name: t.string() }, (ctx, { name }
     name: safe, owner: ctx.sender, kind: 'remote', rounds: 0, pnl: 0, pnlSq: 0, bonuses: 0, tops: 0,
     trades: 0, edge: 0, goalCards: 0, rejects: 0, online: ctx.connectionId !== null, lastSeen: now, joinedAt: now, tableId: -1,
   });
+}
+export const register = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => registerBot(ctx, name));
+export const issueDeployCode = spacetimedb.reducer({name:t.string(), digest:t.string()}, issueCode);
+export const deployBot = spacetimedb.reducer({name:t.string(), code:t.string()}, (ctx,{name,code}) => {
+  name = cleanName(name);
+  const old = redeemCode(ctx, name, code);
+  const p = ctx.db.player.name.find(name);
+  if (p && old && !old.runtime.isEqual(ctx.sender)) {
+    if (p.tableId >= 0 && ctx.db.figgieTable.tableId.find(p.tableId)?.phase === 'trading') throw new SenderError('Reconnect after the bell to change machines.');
+    ctx.db.player.name.update({...p, owner:ctx.sender});
+  }
+  registerBot(ctx, name);
+});
+export const setAccountBanned = spacetimedb.reducer({account:t.string(), banned:t.bool()}, (ctx,{account,banned}) => {
+  const name = setBan(ctx, control0(ctx).admin.isEqual(ctx.sender), account, banned);
+  if (name && banned) {
+    ctx.db.readyLease.name.delete(name);
+    const p = ctx.db.player.name.find(name);
+    if (p) ctx.db.player.name.update({...p, online:false});
+    for (const q of [...ctx.db.quote.iter()]) if (q.name === name) ctx.db.quote.quoteId.delete(q.quoteId);
+  }
 });
 
 /** Keep an HTTP-only bot seated (WebSocket bots stay seated while connected). */
@@ -702,6 +726,7 @@ export const ready = spacetimedb.reducer(ctx => {
   const now = nowMs(ctx);
   for (const p of ctx.db.player.owner.filter(ctx.sender)) {
     if (p.kind !== 'remote') continue;
+    requireLinked(ctx, p.name);
     const lease = { name: p.name, until: now + ONLINE_GRACE_MS };
     if (ctx.db.readyLease.name.find(p.name)) ctx.db.readyLease.name.update(lease);
     else ctx.db.readyLease.insert(lease);
@@ -712,6 +737,7 @@ function mySeat(ctx: Ctx) {
   let me: ReturnType<typeof ctx.db.player.name.find> = null;
   for (const p of ctx.db.player.owner.filter(ctx.sender)) if (p.kind === 'remote') me = p;
   if (!me) throw new SenderError('call register(name) first');
+  requireLinked(ctx, me.name);
   if (me.tableId < 0) throw new SenderError('not seated yet; you join at the next deal');
   const s = seatOf(ctx, me.tableId, me.name);
   if (!s) throw new SenderError('not seated yet; you join at the next deal');
@@ -753,6 +779,7 @@ export const leave = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) =
   if (!p || p.kind === 'house') return;
   const ctl = control0(ctx);
   if (!p.owner.isEqual(ctx.sender) && !ctl.admin.isEqual(ctx.sender)) throw new SenderError('not your bot');
+  if (!ctl.admin.isEqual(ctx.sender)) requireLinked(ctx, name);
   if (p.tableId >= 0 && ctx.db.figgieTable.tableId.find(p.tableId)?.phase === 'trading') {
     throw new SenderError('wait for the bell before removing a seated bot');
   }

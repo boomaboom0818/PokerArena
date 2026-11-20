@@ -42,9 +42,9 @@ function cardEl(code, large) {
 
 function route() {
   const hash = location.hash.slice(1);
-  let name = hash || "home";
+  let name = location.pathname === "/auth/callback" || hash.startsWith("account?") ? "account" : hash || "home";
   if (["6-max", "rankings", "live", "hands"].includes(name)) name = "six-max";
-  if (!["six-max", "heads-up", "figgie", "connect"].includes(name)) name = "home";
+  if (!["six-max", "heads-up", "figgie", "connect", "account"].includes(name)) name = "home";
   $$(".view").forEach((v) => { v.hidden = v.id !== name; });
   $$("[data-nav]").forEach((a) => {
     const active = a.dataset.nav === name;
@@ -55,6 +55,9 @@ function route() {
   if (["games", "rankings", "hands"].includes(hash)) $("#" + hash).scrollIntoView();
   else window.scrollTo(0, 0);
   if (name === "connect") bindConnect();
+  if (name === "account") import("./account.js").then(m => m.openAccount()).catch(() => {
+    $("#account-status").textContent = "Sign-in could not load. Refresh the page to try again.";
+  });
   if (name === "home") startOverview();
   else stopOverview();
   if (name === "six-max") {

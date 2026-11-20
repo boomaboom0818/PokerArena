@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poker Arena — live Hold’em and Figgie bot competition</title>
 <meta name="description" content="Watch bots compete in 6-max Hold’em, heads-up Hold’em, and Figgie. Run your own strategy and join Poker Arena over WebSocket.">
-<link rel="stylesheet" href="/styles.css?v=29">
+<link rel="stylesheet" href="/styles.css?v=30">
 </head>
 <body>
 <header class="top">
@@ -15,6 +15,7 @@
     <a href="#heads-up" data-nav="heads-up">Heads-up</a>
     <a href="#figgie" data-nav="figgie">Figgie</a>
     <a href="#connect" data-nav="connect">Connect a bot</a>
+    <a href="#account" data-nav="account">Account</a>
   </nav>
 </header>
 
@@ -343,6 +344,30 @@
     </div>
   </section>
 
+  <section id="account" class="view" hidden aria-labelledby="account-heading">
+    <p class="kicker">Player account</p>
+    <h1 id="account-heading">Your seat in the arena</h1>
+    <p class="lede">Anyone can watch. Sign in to enter a bot under your name.</p>
+    <div class="panel account-panel">
+      <h2 id="account-title">Sign in to link your bot</h2>
+      <p id="account-info">Your bot name is public. Only organizers can see your verified email for prize notifications and rule enforcement.</p>
+      <button type="button" id="account-login" disabled>Sign in</button>
+      <button type="button" id="account-logout" hidden>Sign out</button>
+      <form id="account-deploy" hidden>
+        <p>Choose one bot name per game. On a new machine, use the same name to reconnect your bot.</p>
+        <label>Game <select id="deploy-game"><option value="poker-arena">6-max Hold’em</option><option value="poker-heads-up">Heads-up Hold’em</option><option value="figgie-arena">Figgie</option></select></label>
+        <label>Bot name <input id="deploy-name" required pattern="[a-z0-9_]{1,24}" maxlength="24" placeholder="my_bot" title="1–24 lowercase letters, numbers or underscores"></label>
+        <button type="submit">Get deployment code</button>
+      </form>
+      <p id="account-status" role="status"></p>
+      <div id="deploy-result" hidden>
+        <label>One-time deployment code <input id="deploy-code" readonly spellcheck="false"></label>
+        <button type="button" id="copy-deploy-code">Copy code</button>
+        <p>Run your bot from the <a href="#connect">connection guide</a> and paste this code in the terminal when prompted. After linking, it reconnects automatically.</p>
+      </div>
+    </div>
+  </section>
+
   <section id="connect" class="view" hidden>
     <div class="section-head">
       <div>
@@ -350,6 +375,7 @@
         <p class="lede">Matches start with connected bots only: two for heads-up, four or five for Figgie, and six for 6-max. More tables open when enough bots are available.</p>
       </div>
     </div>
+    <div class="panel"><h2>First connection?</h2><p><a href="#account">Sign in and get a deployment code</a> for your game and bot name. Run the matching command below, then paste the code at the prompt. Keep the saved identity token for future connections.</p></div>
     <div class="cn-jump">
       <button type="button" data-jump="cn-6max">6-max hold'em</button>
       <button type="button" data-jump="cn-hu">Heads-up hold'em</button>
@@ -365,13 +391,13 @@ cd PokerArena</pre>
     </div>
 
     <div class="rankings-block" id="cn-6max">
-      <div class="hero"><div><h2>6-max hold'em</h2><p class="muted">Create a Python bot once, edit its <code>act(obs)</code> method, then start the connector. Choose a unique name; the CLI saves your identity for reconnects.</p></div></div>
+      <div class="hero"><div><h2>6-max hold'em</h2><p class="muted">Create a Python bot once, edit its <code>act(obs)</code> method, then start the connector. Use the filename as your bot name or pass <code>--name</code> to match your deployment code.</p></div></div>
       <pre class="code" id="six-cmd">python -m pokerarena new my_six_bot.py
 python -m pokerarena connect my_six_bot.py --game 6-max</pre>
       <button type="button" class="copy" data-copy="six-cmd">Copy</button>
       <details class="panel"><summary>Connect from another language</summary>
         <p>Open <code>wss://maincloud.spacetimedb.com/v1/database/poker-arena/subscribe</code> with subprotocol <code>v1.json.spacetimedb</code>. Save the first identity token privately; send it in the Authorization bearer header on reconnect.</p>
-        <ol><li>On that socket call <code>register(name)</code> and subscribe to <code>SELECT * FROM my_turn</code>.</li>
+        <ol><li>First call <code>deploy_bot(name, code)</code> with your one-time code. On reconnect, call <code>register(name)</code>. Subscribe to <code>SELECT * FROM my_turn</code>.</li>
         <li>Read inserted rows in the initial snapshot and subsequent updates. Columns: <code>turn_id, owner, table_id, deadline_ms, observation</code>. Parse the observation JSON for your hole cards, board, stacks, history and legal raise bounds. Card ints are rank × 4 + suit (ranks 2–A, suits ♣♦♥♠).</li>
         <li>Reply on the same socket with <code>submit_action(turn_id, action, raise_to)</code>. Use check, call, fold or raise; send 0 unless raising, then send the total street bet. Turns expire after 10 seconds: the arena checks if free, otherwise folds.</li></ol>
       </details>
@@ -384,7 +410,7 @@ python -m pokerarena connect my_hu_bot.py --game heads-up</pre>
       <button type="button" class="copy" data-copy="hu-cmd">Copy</button>
       <details class="panel"><summary>Connect from another language</summary>
         <p>Open <code>wss://maincloud.spacetimedb.com/v1/database/poker-heads-up/subscribe</code> with subprotocol <code>v1.json.spacetimedb</code>. Save the first identity token privately; send it in the Authorization bearer header on reconnect.</p>
-        <ol><li>On that socket call <code>register(name)</code> and subscribe to <code>SELECT * FROM my_turn</code>.</li>
+        <ol><li>First call <code>deploy_bot(name, code)</code> with your one-time code. On reconnect, call <code>register(name)</code>. Subscribe to <code>SELECT * FROM my_turn</code>.</li>
         <li>Read inserted rows in the initial snapshot and subsequent updates. Columns: <code>turn_id, owner, table_id, deadline_ms, observation</code>. Parse the observation JSON for your hole cards, board, stacks, history and legal raise bounds. Card ints are rank × 4 + suit (ranks 2–A, suits ♣♦♥♠).</li>
         <li>Reply on the same socket with <code>submit_action(turn_id, action, raise_to)</code>. Use check, call, fold or raise; send 0 unless raising, then send the total street bet. Turns expire after 10 seconds: the arena checks if free, otherwise folds.</li></ol>
       </details>
@@ -419,7 +445,10 @@ ws.onmessage = (e) => {
     ws.send(JSON.stringify({ Subscribe: { request_id: 1, query_strings: [
       "SELECT * FROM my_hand", "SELECT * FROM seat", "SELECT * FROM quote",
       "SELECT * FROM trade", "SELECT * FROM figgie_table"] } }));
-    call("register", ["my_bot"]);
+    // First connection only (browser example):
+    const deploymentCode = window.prompt("Deployment code for my_bot in Figgie:");
+    call("deploy_bot", ["my_bot", deploymentCode]);
+    // On reconnect with your saved token: call("register", ["my_bot"]);
   }
   // InitialSubscription, then TransactionUpdateLight for every change
 };
@@ -450,6 +479,6 @@ ws.onmessage = (e) => {
   <span>PokerArena</span>
   <span class="muted">6-max and heads-up no-limit hold'em · Figgie · all live around the clock</span>
 </footer>
-<script type="module" src="/app.js?v=41"></script>
+<script type="module" src="/app.js?v=42"></script>
 </body>
 </html>

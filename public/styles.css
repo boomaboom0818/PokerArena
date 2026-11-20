@@ -44,6 +44,13 @@ code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.92em;
 nav { display: flex; gap: 18px; }
 nav a { color: var(--muted); border-bottom: 2px solid transparent; padding-bottom: 2px; white-space: nowrap; }
 nav a.active, nav a:hover { color: var(--ink); border-color: var(--gold); }
+.account-panel { max-width: 42rem; }
+.account-panel label { display: block; margin: 12px 0; }
+.account-panel button { padding: 7px 14px; border: 1px solid var(--gold); border-radius: 999px; background: var(--gold); color: #1a140c; cursor: pointer; }
+.account-panel button:disabled { opacity: .6; cursor: default; }
+.account-panel input, .account-panel select { padding: 6px 9px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+#deploy-code { width: min(100%, 34ch); font: .95rem ui-monospace, monospace; }
+#account-status:empty { display: none; }
 .api-pill {
   margin-left: auto; font-family: ui-monospace, monospace; font-size: 12px;
   border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; color: var(--muted);

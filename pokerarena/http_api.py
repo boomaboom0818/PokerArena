@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -192,7 +193,12 @@ def hand_payload(store: Store, hand_id: int) -> dict | None:
     }
 
 
+def auth_config():
+    return {"client_id": os.environ.get("ARENA_AUTH_CLIENT_ID", "")}
+
+
 CONNECT_GUIDE = {
+    "first_connection": "Sign in at https://pokerarena-psi.vercel.app/#account and create a one-time code for your game and bot name. Paste it when the CLI asks.",
     "summary": "Run your bot on your own machine. It connects over WebSocket and sends game actions; no strategy is uploaded.",
     "repo": "https://github.com/boomaboom0818/PokerArena",
     "join": "python -m pokerarena connect {file} --game 6-max",
@@ -704,6 +710,10 @@ def make_handler(store: Store, runner=None):
             path = parsed.path.rstrip("/") or "/"
             qs = parse_qs(parsed.query)
             parts = [p for p in path.split("/") if p]
+
+            if method == "GET" and path == "/api/auth/config":
+                self._send(200, auth_config())
+                return
 
             if method == "GET" and path in ("/", "/api", "/api/health"):
                 self._send(200, {"ok": True, "service": "pokerarena"})

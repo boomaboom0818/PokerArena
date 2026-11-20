@@ -21,6 +21,7 @@ Run it with ``python -m pokerarena figgie my_bot.py``.
 from __future__ import annotations
 
 import base64
+import getpass
 import hashlib
 import importlib.util
 import inspect
@@ -38,7 +39,7 @@ import time
 from dataclasses import dataclass, field
 from math import comb
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 HOST = "wss://maincloud.spacetimedb.com"
 DATABASE = "figgie-arena"
@@ -456,6 +457,20 @@ def clean_name(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isascii() and (ch.isalnum() or ch == "_"))[:24]
 
 
+def deployment_code(name: str, host: str, database: str) -> str:
+    page = ('https://pokerarena-psi.vercel.app/#account?' + urlencode({'game': database, 'name': name}) if _origin(host) == _origin(HOST)
+            else "your arena operator's account page")
+    print(f'Sign in at {page} and get a deployment code for {name} in {database}.', file=sys.stderr)
+    prompt = f'Deployment code for {host}/{database}: '
+    try:
+        code = (getpass.getpass(prompt) if sys.stdin.isatty() else input(prompt)).strip()
+    except EOFError:
+        raise SystemExit('Link this bot once in a terminal, then restart it with the saved identity.') from None
+    if not re.fullmatch('[0-9a-f]{32}', code):
+        raise SystemExit('Expected the 32-character one-time deployment code from the Account page.')
+    return code
+
+
 def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int | None = None,
         verbose: bool = True) -> None:
     """Connect, register, and trade until interrupted (reconnects on drops)."""
@@ -522,8 +537,6 @@ def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int 
                         save_token(tok_file, msg["IdentityToken"]["token"])
                         ws.send(json.dumps({"Subscribe": {"query_strings": SUBSCRIPTIONS, "request_id": 1}}))
                         bot._call("register", [bot.name])
-                        if verbose:
-                            print(f"connected as {bot.name}; you sit down at the next deal", flush=True)
                     elif "InitialSubscription" in msg:
                         cache.apply(msg["InitialSubscription"]["database_update"]["tables"])
                     elif "TransactionUpdateLight" in msg:
@@ -535,7 +548,15 @@ def run(bot: FiggieBot, host: str = HOST, database: str = DATABASE, rounds: int 
                             cache.apply(status["Committed"].get("tables", []))
                         rid = (tu.get("reducer_call") or {}).get("request_id")
                         reducer = bot._requests.pop(rid, None)
-                        if "Failed" in status and reducer:
+                        if reducer in ('register', 'deploy_bot'):
+                            if 'Failed' in status:
+                                if reducer == 'register' and 'LINK_REQUIRED:' in status['Failed']:
+                                    bot._call('deploy_bot', [bot.name, deployment_code(bot.name, host, database)])
+                                else:
+                                    raise SystemExit(f"registration refused: {status['Failed']}")
+                            elif 'Committed' in status and verbose:
+                                print(f"connected as {bot.name}; you sit down at the next deal", flush=True)
+                        elif "Failed" in status and reducer:
                             bot.on_error(reducer, status["Failed"])
                 if closed or time.time() < next_tick:
                     continue
