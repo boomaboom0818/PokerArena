@@ -209,7 +209,14 @@ async function selectBot(name) {
       $("#hands").scrollIntoView({ behavior: "smooth" });
     });
   } catch (err) {
-    card.innerHTML = `<h2>${esc(name)}</h2><p>${esc(err.message)}</p>`;
+    // Live bots have no archived matches; show their live standing instead of an error.
+    const r = leaderboard.find((b) => b.bot === name);
+    card.innerHTML = r
+      ? `<h2>${esc(name)}</h2>
+        <p><b class="${r.chips >= 0 ? "up" : "down"}">${money(r.chips)}</b> chips · ${r.hands.toLocaleString()} hands · ${winRate(r)} won</p>
+        <p class="muted">No recorded matches yet.</p>`
+      : `<h2>${esc(name)}</h2><p>${esc(err.message)}</p>`;
+    card.dataset.ready = r ? name : "";
   }
 }
 
@@ -416,7 +423,7 @@ async function loadHands(bot) {
     const q = bot ? "?bot=" + encodeURIComponent(bot) + "&limit=40" : "?limit=40";
     const data = await api("/api/hands" + q);
     if (!data.hands.length) {
-      list.innerHTML = "<p class='muted'>No hands in the database yet. Run a tournament first.</p>";
+      list.innerHTML = "<p class='muted'>No recorded hands yet.</p>";
       return;
     }
     list.innerHTML = data.hands.map((h) => `
